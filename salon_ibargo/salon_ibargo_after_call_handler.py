@@ -51,13 +51,18 @@ async def handle_salon_after_call(request: Request):
     payload = await request.json()
 
     call_id = payload["call_id"]
-    call_started_at = datetime.fromisoformat(payload["call_started_at"])
+
+    call_started_at = datetime.strptime(
+        payload["call_started_at"],
+        "%Y-%m-%d %H:%M:%S"
+    ).replace(tzinfo=PST)
+
     transcript = payload.get("transcript", [])
     confirmed_visit = payload.get("confirmed_visit")
 
     call_ended = datetime.now(tz=PST)
     duration = int((call_ended - call_started_at).total_seconds())
-
+    
     summary = None
     if transcript:
         summary = await summarize_transcript(transcript)
