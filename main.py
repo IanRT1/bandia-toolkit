@@ -70,7 +70,7 @@ async def health_check():
 # AFTER CALL
 # ----------------------------
 
-@app.post("/salon-ibargo/after-call")
+@app.post("/salon_ibargo_after_call")
 async def salon_ibargo_after_call_route(request: Request):
     """
     Salon Ibargo – After Call automation
@@ -82,7 +82,7 @@ async def salon_ibargo_after_call_route(request: Request):
 # ACTION: multiplica_numeros
 # ----------------------------
 
-@app.post("/salon-ibargo/multiplica-numeros")
+@app.post("/salon_ibargo_multiplica_numeros")
 async def salon_ibargo_multiplica_numeros_route(request: Request):
     return await multiplica_numeros_endpoint(request)
 
@@ -91,7 +91,7 @@ async def salon_ibargo_multiplica_numeros_route(request: Request):
 # ACTION: agendar_cita_disponibilidad
 # ----------------------------
 
-@app.post("/salon-ibargo/agendar-cita-disponibilidad")
+@app.post("/salon_ibargo_agendar_cita_disponibilidad")
 async def salon_ibargo_agendar_cita_route(request: Request):
     return await agendar_cita_disponibilidad_endpoint(request)
 
@@ -100,7 +100,7 @@ async def salon_ibargo_agendar_cita_route(request: Request):
 # ACTION: cotizar_evento
 # ----------------------------
 
-@app.post("/salon-ibargo/cotizar-evento")
+@app.post("/salon_ibargo_cotizar_evento")
 async def salon_ibargo_cotizar_evento_route(request: Request):
     return await cotizar_evento_endpoint(request)
 
