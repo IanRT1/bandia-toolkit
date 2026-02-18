@@ -25,25 +25,38 @@ logger = logging.getLogger("salon_ibargo_after_conversation")
 PST = ZoneInfo("America/Los_Angeles")
 
 
-CONVERSATION_HEADERS = [
-    "created_at_pst",
-    "channel",
-    "conversation_started_at",
-    "conversation_ended_at",
-    "duration_seconds",
-    "transcript",
-    "summary",
-    "conversation_id",
+# =====================================================
+# SHEET HEADERS (MATCH GOOGLE SHEETS EXACTLY)
+# =====================================================
+
+CHAT_HEADERS = [
+    "Creado",
+    "Empiezo Chat",
+    "Termino Chat",
+    "Duración",
+    "Transcripción",
+    "Resumen",
+    "ID",
+]
+
+CALL_HEADERS = [
+    "Creado",
+    "Empiezo Llamada",
+    "Termino Llamada",
+    "Duración",
+    "Transcripción",
+    "Resumen",
+    "ID",
 ]
 
 VISIT_HEADERS = [
-    "created_at_pst",
-    "name",
-    "purpose",
-    "visit_date",
-    "visit_time",
-    "conversation_id",
-    "channel",
+    "Creado",
+    "Nombre",
+    "Motivo",
+    "Fecha",
+    "Hora",
+    "ID Conversación",
+    "Canal",
 ]
 
 
@@ -57,16 +70,22 @@ async def handle_salon_after_call(request: Request):
 
     logger.info("[handle_salon_after_call] RAW PAYLOAD: %s", payload)
 
-    # Required fields
+    # -------------------------------------------------
+    # REQUIRED FIELDS
+    # -------------------------------------------------
+
     conversation_id = payload["conversation_id"]
-    channel = payload["channel"]  # expected: "voice" or "chat"
+    channel = payload["channel"]  # "voice" or "chat"
     started_str = payload["conversation_started_at"]
     ended_str = payload["conversation_ended_at"]
 
     transcript = payload.get("transcript", [])
     confirmed_visit = payload.get("confirmed_visit")
 
-    # Parse timestamps
+    # -------------------------------------------------
+    # PARSE TIMESTAMPS
+    # -------------------------------------------------
+
     conversation_started_at = datetime.strptime(
         started_str,
         "%Y-%m-%d %H:%M:%S",
@@ -81,43 +100,77 @@ async def handle_salon_after_call(request: Request):
         (conversation_ended_at - conversation_started_at).total_seconds()
     )
 
-    # Summarize transcript
+    # -------------------------------------------------
+    # SUMMARIZE TRANSCRIPT
+    # -------------------------------------------------
+
     summary = None
     if transcript:
         summary = await summarize_transcript(transcript)
 
-    # Build conversation row
-    conversation_row = {
-        "created_at_pst": conversation_ended_at.strftime("%Y-%m-%d %H:%M:%S"),
-        "channel": channel,
-        "conversation_started_at": conversation_started_at.strftime("%Y-%m-%d %H:%M:%S"),
-        "conversation_ended_at": conversation_ended_at.strftime("%Y-%m-%d %H:%M:%S"),
-        "duration_seconds": duration,
-        "transcript": transcript_to_single_line(transcript),
-        "summary": summary,
-        "conversation_id": conversation_id,
-    }
+    single_line_transcript = transcript_to_single_line(transcript)
+
+    created_str = conversation_ended_at.strftime("%Y-%m-%d %H:%M:%S")
+    started_fmt = conversation_started_at.strftime("%Y-%m-%d %H:%M:%S")
+    ended_fmt = conversation_ended_at.strftime("%Y-%m-%d %H:%M:%S")
 
     # =====================================================
-    # ROUTE TO CORRECT SHEET
+    # ROUTE TO CORRECT CONVERSATION SHEET
     # =====================================================
 
     if channel == "voice":
+
         sheet_name = "Llamadas"
+        headers = CALL_HEADERS
+
+        row = {
+            "Creado": created_str,
+            "Empiezo Llamada": started_fmt,
+            "Termino Llamada": ended_fmt,
+            "Duración": duration,
+            "Transcripción": single_line_transcript,
+            "Resumen": summary,
+            "ID": conversation_id,
+        }
+
     elif channel == "chat":
+
         sheet_name = "Chats"
+        headers = CHAT_HEADERS
+
+        row = {
+            "Creado": created_str,
+            "Empiezo Chat": started_fmt,
+            "Termino Chat": ended_fmt,
+            "Duración": duration,
+            "Transcripción": single_line_transcript,
+            "Resumen": summary,
+            "ID": conversation_id,
+        }
+
     else:
-        # Defensive default
-        sheet_name = "Chats"
         logger.warning(
             "Unknown channel '%s', defaulting to Chats sheet",
             channel,
         )
 
+        sheet_name = "Chats"
+        headers = CHAT_HEADERS
+
+        row = {
+            "Creado": created_str,
+            "Empiezo Chat": started_fmt,
+            "Termino Chat": ended_fmt,
+            "Duración": duration,
+            "Transcripción": single_line_transcript,
+            "Resumen": summary,
+            "ID": conversation_id,
+        }
+
     append_row_to_sheet(
         sheet_name=sheet_name,
-        headers=CONVERSATION_HEADERS,
-        row=conversation_row,
+        headers=headers,
+        row=row,
     )
 
     # =====================================================
@@ -127,13 +180,13 @@ async def handle_salon_after_call(request: Request):
     if confirmed_visit:
 
         visit_row = {
-            "created_at_pst": conversation_row["created_at_pst"],
-            "name": confirmed_visit["name"],
-            "purpose": confirmed_visit["purpose"],
-            "visit_date": confirmed_visit["visit_date"],
-            "visit_time": confirmed_visit["visit_time"],
-            "conversation_id": conversation_id,
-            "channel": channel,
+            "Creado": created_str,
+            "Nombre": confirmed_visit["name"],
+            "Motivo": confirmed_visit["purpose"],
+            "Fecha": confirmed_visit["visit_date"],
+            "Hora": confirmed_visit["visit_time"],
+            "ID Conversación": conversation_id,
+            "Canal": channel,
         }
 
         append_row_to_sheet(
