@@ -6,10 +6,23 @@ import csv
 
 from fastapi import Request
 
-from salon_ibargo.salon_ibargo_ai_utils import summarize_transcript, transcript_to_single_line
+from salon_ibargo.salon_ibargo_ai_utils import (
+    summarize_transcript,
+    transcript_to_single_line,
+)
 from shared.gsheet_utils import append_row_to_sheet
 
+
+# =====================================================
+# LOGGER
+# =====================================================
+
 logger = logging.getLogger("salon_ibargo_after_call")
+
+
+# =====================================================
+# CONFIG
+# =====================================================
 
 PST = ZoneInfo("America/Los_Angeles")
 BASE_DIR = Path(__file__).resolve().parent
@@ -37,24 +50,38 @@ VISIT_HEADERS = [
 ]
 
 
+# =====================================================
+# CSV APPEND
+# =====================================================
+
 def append_csv(path: Path, headers, row):
     exists = path.exists()
+
     with path.open("a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=headers)
+
         if not exists:
             writer.writeheader()
+
         writer.writerow(row)
 
+
+# =====================================================
+# AFTER CALL HANDLER
+# =====================================================
 
 async def handle_salon_after_call(request: Request):
 
     payload = await request.json()
 
-    call_id = payload["call_id"]
+    # 🔥 Always log raw payload
+    logger.info("[handle_salon_after_call] RAW PAYLOAD: %s", payload)
+
+    call_id = payload.get("call_id")
 
     call_started_at = datetime.strptime(
         payload["call_started_at"],
-        "%Y-%m-%d %H:%M:%S"
+        "%Y-%m-%d %H:%M:%S",
     ).replace(tzinfo=PST)
 
     transcript = payload.get("transcript", [])
@@ -62,7 +89,7 @@ async def handle_salon_after_call(request: Request):
 
     call_ended = datetime.now(tz=PST)
     duration = int((call_ended - call_started_at).total_seconds())
-    
+
     summary = None
     if transcript:
         summary = await summarize_transcript(transcript)
@@ -86,6 +113,7 @@ async def handle_salon_after_call(request: Request):
     )
 
     if confirmed_visit:
+
         visit_row = {
             "created_at_pst": call_row["created_at_pst"],
             "name": confirmed_visit["name"],
