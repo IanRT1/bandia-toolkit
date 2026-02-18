@@ -1,5 +1,5 @@
 import logging
-from fastapi import Request
+from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse
 
 from .salon_ibargo_ai_utils import normalize_visit_datetime_pst
@@ -13,6 +13,29 @@ logger = logging.getLogger("salon_ibargo_actions")
 
 
 # =====================================================
+# BASE FIELD VALIDATION
+# =====================================================
+
+def extract_base_fields(payload: dict):
+    conversation_id = payload.get("conversation_id")
+    channel = payload.get("channel")
+
+    if not conversation_id:
+        raise HTTPException(
+            status_code=400,
+            detail="conversation_id is required",
+        )
+
+    if not channel:
+        raise HTTPException(
+            status_code=400,
+            detail="channel is required",
+        )
+
+    return conversation_id, channel
+
+
+# =====================================================
 # ACTION: multiplica_numeros
 # =====================================================
 
@@ -21,16 +44,25 @@ async def multiplica_numeros_endpoint(request: Request):
     payload = await request.json()
     logger.info("[multiplica_numeros] RAW PAYLOAD: %s", payload)
 
+    conversation_id, channel = extract_base_fields(payload)
+
     number1 = payload.get("number1")
     number2 = payload.get("number2")
 
     if number1 is None or number2 is None:
-        return JSONResponse(
-            {"error": "number1 and number2 are required"},
+        raise HTTPException(
             status_code=400,
+            detail="number1 and number2 are required",
         )
 
     result = number1 * number2
+
+    logger.info(
+        "multiplica_numeros | conversation_id=%s channel=%s result=%s",
+        conversation_id,
+        channel,
+        result,
+    )
 
     return JSONResponse(
         {
@@ -50,15 +82,17 @@ async def agendar_cita_disponibilidad_endpoint(request: Request):
     payload = await request.json()
     logger.info("[agendar_cita_disponibilidad] RAW PAYLOAD: %s", payload)
 
+    conversation_id, channel = extract_base_fields(payload)
+
     name = payload.get("name")
     visit_date = payload.get("visit_date")
     visit_time = payload.get("visit_time")
     purpose = payload.get("purpose")
 
     if not all([name, visit_date, visit_time, purpose]):
-        return JSONResponse(
-            {"error": "Missing required fields"},
+        raise HTTPException(
             status_code=400,
+            detail="name, visit_date, visit_time, and purpose are required",
         )
 
     normalized = await normalize_visit_datetime_pst(
@@ -67,9 +101,9 @@ async def agendar_cita_disponibilidad_endpoint(request: Request):
     )
 
     if normalized.get("confidence") != "high":
-        return JSONResponse(
-            {"status": "low_confidence"},
+        raise HTTPException(
             status_code=400,
+            detail="Visit date/time could not be confidently normalized",
         )
 
     visit = {
@@ -78,6 +112,13 @@ async def agendar_cita_disponibilidad_endpoint(request: Request):
         "visit_date": normalized["visit_date"],
         "visit_time": normalized["visit_time"],
     }
+
+    logger.info(
+        "agendar_cita | conversation_id=%s channel=%s visit=%s",
+        conversation_id,
+        channel,
+        visit,
+    )
 
     return JSONResponse(
         {
@@ -100,13 +141,15 @@ async def cotizar_evento_endpoint(request: Request):
     payload = await request.json()
     logger.info("[cotizar_evento] RAW PAYLOAD: %s", payload)
 
+    conversation_id, channel = extract_base_fields(payload)
+
     tipo_evento = payload.get("tipo_evento")
     numero_invitados = payload.get("numero_invitados")
 
     if not tipo_evento or numero_invitados is None:
-        return JSONResponse(
-            {"error": "tipo_evento and numero_invitados are required"},
+        raise HTTPException(
             status_code=400,
+            detail="tipo_evento and numero_invitados are required",
         )
 
     base_price = 5000
@@ -122,6 +165,13 @@ async def cotizar_evento_endpoint(request: Request):
         cotizacion *= 1.1
 
     cotizacion = int(cotizacion)
+
+    logger.info(
+        "cotizar_evento | conversation_id=%s channel=%s price=%s",
+        conversation_id,
+        channel,
+        cotizacion,
+    )
 
     return JSONResponse(
         {
