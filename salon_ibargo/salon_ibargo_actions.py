@@ -7,17 +7,26 @@ from .salon_ibargo_ai_utils import normalize_visit_datetime_pst
 logger = logging.getLogger("salon_ibargo_actions")
 
 
+# =====================================================
+# ACTION: multiplica_numeros
+# =====================================================
+
 async def multiplica_numeros_endpoint(request: Request):
     payload = await request.json()
+
     number1 = payload["number1"]
     number2 = payload["number2"]
 
     result = number1 * number2
 
     return JSONResponse({
-        "result": f"The product of {number1} and {number2} is {result}"
+        "message": f"The product of {number1} and {number2} is {result}"
     })
 
+
+# =====================================================
+# ACTION: agendar_cita_disponibilidad
+# =====================================================
 
 async def agendar_cita_disponibilidad_endpoint(request: Request):
     payload = await request.json()
@@ -33,7 +42,10 @@ async def agendar_cita_disponibilidad_endpoint(request: Request):
     )
 
     if normalized.get("confidence") != "high":
-        return JSONResponse({"status": "low_confidence"}, status_code=400)
+        return JSONResponse(
+            {"status": "low_confidence"},
+            status_code=400
+        )
 
     visit = {
         "name": name,
@@ -44,13 +56,17 @@ async def agendar_cita_disponibilidad_endpoint(request: Request):
 
     return JSONResponse({
         "status": "confirmed",
-        "visit": visit,
+        "confirmed_visit": visit,
         "message": (
             f"Perfecto {name}. Tu visita quedó agendada para el "
             f"{visit['visit_date']} a las {visit['visit_time']}."
         )
     })
 
+
+# =====================================================
+# ACTION: cotizar_evento
+# =====================================================
 
 async def cotizar_evento_endpoint(request: Request):
     payload = await request.json()
