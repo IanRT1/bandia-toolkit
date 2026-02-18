@@ -2,7 +2,7 @@ import logging
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
-from salon_ibargo_ai_utils import normalize_visit_datetime_pst
+from .salon_ibargo_ai_utils import normalize_visit_datetime_pst
 
 logger = logging.getLogger("salon_ibargo_actions")
 
