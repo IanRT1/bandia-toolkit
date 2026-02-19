@@ -3,11 +3,10 @@
 from typing import List
 import os
 import logging
-import asyncio
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 import json
 from datetime import datetime
@@ -31,7 +30,7 @@ if not OPENAI_API_KEY:
 # OpenAI client (OFFICIAL SDK)
 # -------------------------------------------------
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 SUM_MODEL = "gpt-5-nano"
 STD_MODEL = "gpt-5-mini"
@@ -101,7 +100,7 @@ async def summarize_transcript(transcript: List[TranscriptItem]) -> str:
 
     logger.info(f"summarize_transcript: calling {SUM_MODEL}")
 
-    response = client.responses.create(
+    response = await client.responses.create(
         model=SUM_MODEL,
         input=prompt,
     )
@@ -243,36 +242,3 @@ async def normalize_visit_datetime_pst(
 
 
 
-# -------------------------------------------------
-# Self-test
-# -------------------------------------------------
-
-if __name__ == "__main__":
-
-    async def _test():
-        print("=== ai_utils self-test ===\n")
-
-        normalized = await normalize_visit_datetime_pst(
-            visit_date="2026-01-20",
-            visit_time="7 pm",
-            current_datetime="domingo, 19/01/2026 05:45PM PST",
-        )
-
-        print("Normalized Datetime:")
-        print(normalized)
-        print()
-
-        transcript = [
-            TranscriptItem(role="user", content="Hola, quiero saber si hay fechas disponibles."),
-            TranscriptItem(role="assistant", content="Claro, ¿qué fecha tienes en mente?"),
-            TranscriptItem(role="user", content="El 20 de enero por la tarde."),
-            TranscriptItem(role="assistant", content="Perfecto, esa fecha está disponible."),
-        ]
-
-        summary = await summarize_transcript(transcript)
-
-        print("Transcript summary:")
-        print(summary)
-        print("\n=== ai_utils self-test completed ===")
-
-    asyncio.run(_test())
