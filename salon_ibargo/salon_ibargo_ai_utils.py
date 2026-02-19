@@ -113,11 +113,6 @@ async def normalize_visit_datetime_pst(
     visit_date: str,
     visit_time: str,
 ) -> dict:
-    """
-    Uses LLM to resolve relative date/time language.
-    ai_utils owns reference time + timezone.
-    Returns normalized components + confidence.
-    """
 
     reference_dt = datetime.now(PST)
 
@@ -150,9 +145,15 @@ async def normalize_visit_datetime_pst(
         input=prompt,
     )
 
-    data = json.loads(extract_text(response))
+    raw_text = extract_text(response)
+    logger.info("NORMALIZER RAW MODEL OUTPUT: %s", raw_text)
 
-    # HARD validation (still deterministic)
+    data = json.loads(raw_text)
+
+    logger.info("NORMALIZER PARSED JSON: %s", data)
+    logger.info("NORMALIZER CONFIDENCE: %s", data.get("confidence"))
+
+    # HARD validation
     datetime.strptime(data["date"], "%Y-%m-%d")
     datetime.strptime(data["time"], "%H:%M")
 
@@ -161,13 +162,18 @@ async def normalize_visit_datetime_pst(
         "%Y-%m-%d %H:%M",
     ).replace(tzinfo=PST)
 
-    return {
-        "visit_date": dt.strftime("%Y-%m-%d"),     # ISO date
-        "visit_time": dt.strftime("%H:%M"),        # 24h time
-        "visit_datetime_iso": dt.isoformat(),      # full ISO
+    result = {
+        "visit_date": dt.strftime("%Y-%m-%d"),
+        "visit_time": dt.strftime("%H:%M"),
+        "visit_datetime_iso": dt.isoformat(),
         "timezone": "America/Los_Angeles",
         "confidence": data.get("confidence", "low"),
     }
+
+    logger.info("NORMALIZER FINAL RESULT: %s", result)
+
+    return result
+
 
 
 # -------------------------------------------------
