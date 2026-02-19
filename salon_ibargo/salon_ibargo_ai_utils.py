@@ -127,8 +127,9 @@ async def normalize_visit_datetime_pst(
         - No expliques nada.
         - No inventes valores.
         - Ignora zona horaria.
+        - Si la fecha de entrada no tiene año, asume siempre el año en curso indicado en la referencia.
         - Si la fecha y hora pueden resolverse sin ambigüedad, confidence = "high".
-        - Si existe cualquier ambigüedad real, confidence = "low".
+        - Si no hay una fecha y hora de entrada valido, confidence = "low".
 
         Referencia actual:
         Fecha: {reference_date_str}
