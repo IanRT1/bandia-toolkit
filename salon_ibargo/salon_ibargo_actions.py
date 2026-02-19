@@ -101,6 +101,7 @@ async def agendar_cita_disponibilidad_endpoint(request: Request):
     )
 
     if normalized.get("confidence") != "high":
+        logger.info("Visit date/time could not be confidently normalized")
         raise HTTPException(
             status_code=400,
             detail="Visit date/time could not be confidently normalized",

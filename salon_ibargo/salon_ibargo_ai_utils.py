@@ -116,27 +116,34 @@ async def normalize_visit_datetime_pst(
 
     reference_dt = datetime.now(PST)
 
+    reference_date_str = reference_dt.strftime("%Y-%m-%d")
+    reference_time_str = reference_dt.strftime("%H:%M")
+
     prompt = f"""
-        Resuelve fecha y hora a valores explícitos usando la referencia dada.
+        Resuelve fecha y hora a valores explícitos.
 
-        REGLAS:
-        - Devuelve SOLO JSON válido
-        - No formatees para humanos
-        - No inventes valores
-        - Indica confidence si hay duda
+        REGLAS OBLIGATORIAS:
+        - Devuelve SOLO JSON válido.
+        - No agregues texto adicional.
+        - No expliques nada.
+        - No inventes valores.
+        - Asume SIEMPRE zona horaria America/Los_Angeles (PST).
+        - Si la fecha y hora pueden resolverse sin ambigüedad, confidence = "high".
+        - Si existe cualquier ambigüedad real, confidence = "low".
 
-        Referencia (ISO):
-        {reference_dt.isoformat()}
+        Referencia actual (PST):
+        Fecha: {reference_date_str}
+        Hora: {reference_time_str}
 
         Entrada:
         fecha: "{visit_date}"
         hora: "{visit_time}"
 
-        Formato EXACTO:
+        Formato EXACTO requerido:
         {{
         "date": "YYYY-MM-DD",
         "time": "HH:MM",
-        "confidence": "high|medium|low"
+        "confidence": "high|low"
         }}
     """
 
@@ -153,7 +160,7 @@ async def normalize_visit_datetime_pst(
     logger.info("NORMALIZER PARSED JSON: %s", data)
     logger.info("NORMALIZER CONFIDENCE: %s", data.get("confidence"))
 
-    # HARD validation
+    # HARD deterministic validation
     datetime.strptime(data["date"], "%Y-%m-%d")
     datetime.strptime(data["time"], "%H:%M")
 
