@@ -127,11 +127,11 @@ async def normalize_visit_datetime_pst(
         - No agregues texto adicional.
         - No expliques nada.
         - No inventes valores.
-        - Asume SIEMPRE zona horaria America/Los_Angeles (PST).
+        - Ignora zona horaria.
         - Si la fecha y hora pueden resolverse sin ambigüedad, confidence = "high".
         - Si existe cualquier ambigüedad real, confidence = "low".
 
-        Referencia actual (PST):
+        Referencia actual:
         Fecha: {reference_date_str}
         Hora: {reference_time_str}
 
