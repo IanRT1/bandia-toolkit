@@ -147,25 +147,85 @@ async def normalize_visit_datetime_pst(
         }}
     """
 
-    response = client.responses.create(
-        model=STD_MODEL,
-        input=prompt,
-    )
+    try:
+        response = await client.responses.create(
+            model=STD_MODEL,
+            input=prompt,
+        )
 
-    raw_text = extract_text(response)
-    logger.info("NORMALIZER RAW MODEL OUTPUT: %s", raw_text)
+        raw_text = extract_text(response)
+        logger.info("NORMALIZER RAW MODEL OUTPUT: %s", raw_text)
 
-    data = json.loads(raw_text)
+        data = json.loads(raw_text)
+
+    except Exception as e:
+        logger.exception("Normalizer model or JSON parsing failed")
+        return {
+            "visit_date": None,
+            "visit_time": None,
+            "visit_datetime_iso": None,
+            "timezone": "America/Los_Angeles",
+            "confidence": "low",
+        }
 
     logger.info("NORMALIZER PARSED JSON: %s", data)
     logger.info("NORMALIZER CONFIDENCE: %s", data.get("confidence"))
 
-    # HARD deterministic validation
-    datetime.strptime(data["date"], "%Y-%m-%d")
-    datetime.strptime(data["time"], "%H:%M")
+    # -------------------------------------------------
+    # HARD TYPE VALIDATION
+    # -------------------------------------------------
+
+    date_str = data.get("date")
+    time_str = data.get("time")
+    confidence = data.get("confidence", "low")
+
+    if not isinstance(date_str, str) or not isinstance(time_str, str):
+        logger.warning("Normalizer returned invalid types")
+        return {
+            "visit_date": date_str,
+            "visit_time": time_str,
+            "visit_datetime_iso": None,
+            "timezone": "America/Los_Angeles",
+            "confidence": "low",
+        }
+
+    # -------------------------------------------------
+    # FORMAT VALIDATION
+    # -------------------------------------------------
+
+    try:
+        datetime.strptime(date_str, "%Y-%m-%d")
+        datetime.strptime(time_str, "%H:%M")
+    except Exception:
+        logger.warning("Normalizer returned invalid date/time format")
+        return {
+            "visit_date": date_str,
+            "visit_time": time_str,
+            "visit_datetime_iso": None,
+            "timezone": "America/Los_Angeles",
+            "confidence": "low",
+        }
+
+    # -------------------------------------------------
+    # CONFIDENCE CHECK
+    # -------------------------------------------------
+
+    if confidence != "high":
+        logger.info("Visit date/time not high confidence")
+        return {
+            "visit_date": date_str,
+            "visit_time": time_str,
+            "visit_datetime_iso": None,
+            "timezone": "America/Los_Angeles",
+            "confidence": "low",
+        }
+
+    # -------------------------------------------------
+    # SAFE DATETIME CONSTRUCTION
+    # -------------------------------------------------
 
     dt = datetime.strptime(
-        f'{data["date"]} {data["time"]}',
+        f"{date_str} {time_str}",
         "%Y-%m-%d %H:%M",
     ).replace(tzinfo=PST)
 
@@ -174,7 +234,7 @@ async def normalize_visit_datetime_pst(
         "visit_time": dt.strftime("%H:%M"),
         "visit_datetime_iso": dt.isoformat(),
         "timezone": "America/Los_Angeles",
-        "confidence": data.get("confidence", "low"),
+        "confidence": "high",
     }
 
     logger.info("NORMALIZER FINAL RESULT: %s", result)
