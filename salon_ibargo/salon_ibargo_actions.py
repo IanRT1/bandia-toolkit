@@ -34,45 +34,6 @@ def extract_base_fields(payload: dict):
 
     return conversation_id, channel
 
-
-# =====================================================
-# ACTION: multiplica_numeros
-# =====================================================
-
-async def multiplica_numeros_endpoint(request: Request):
-
-    payload = await request.json()
-    logger.info("[multiplica_numeros] RAW PAYLOAD: %s", payload)
-
-    conversation_id, channel = extract_base_fields(payload)
-
-    number1 = payload.get("number1")
-    number2 = payload.get("number2")
-
-    if number1 is None or number2 is None:
-        raise HTTPException(
-            status_code=400,
-            detail="number1 and number2 are required",
-        )
-
-    result = number1 * number2
-
-    logger.info(
-        "multiplica_numeros | conversation_id=%s channel=%s result=%s",
-        conversation_id,
-        channel,
-        result,
-    )
-
-    return JSONResponse(
-        {
-            "status": "success",
-            "result": result,
-            "message": f"The product of {number1} and {number2} is {result}",
-        }
-    )
-
-
 # =====================================================
 # ACTION: agendar_cita_disponibilidad
 # =====================================================
