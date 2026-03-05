@@ -28,7 +28,6 @@ from fastapi.responses import JSONResponse
 # =========================
 from salon_ibargo.salon_ibargo_after_call_handler import handle_salon_after_call
 from salon_ibargo.salon_ibargo_actions import (
-    multiplica_numeros_endpoint,
     agendar_cita_disponibilidad_endpoint,
     cotizar_evento_endpoint,
 )
@@ -76,15 +75,6 @@ async def salon_ibargo_after_call_route(request: Request):
     Salon Ibargo – After Call automation
     """
     return await handle_salon_after_call(request)
-
-
-# ----------------------------
-# ACTION: multiplica_numeros
-# ----------------------------
-
-@app.post("/salon_ibargo_multiplica_numeros")
-async def salon_ibargo_multiplica_numeros_route(request: Request):
-    return await multiplica_numeros_endpoint(request)
 
 
 # ----------------------------
