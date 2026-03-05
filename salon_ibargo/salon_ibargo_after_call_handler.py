@@ -41,6 +41,8 @@ CHAT_HEADERS = [
 
 CALL_HEADERS = [
     "Creado",
+    "From Phone Number",
+    "To Phone Number",
     "Empiezo Llamada",
     "Termino Llamada",
     "Duración",
@@ -52,6 +54,8 @@ CALL_HEADERS = [
 VISIT_HEADERS = [
     "Creado",
     "Nombre",
+    "From Phone Number",
+    "To Phone Number",
     "Motivo",
     "Fecha",
     "Hora",
@@ -75,12 +79,16 @@ async def handle_salon_after_call(request: Request):
     # -------------------------------------------------
 
     conversation_id = payload["conversation_id"]
-    channel = payload["channel"]  # "voice" or "chat"
+    channel = payload["channel"]
     started_str = payload["conversation_started_at"]
     ended_str = payload["conversation_ended_at"]
 
     transcript = payload.get("transcript", [])
     confirmed_visit = payload.get("confirmed_visit")
+
+    # Voice-only metadata (safe for chat)
+    from_phone_number = payload.get("from_phone_number")
+    to_phone_number = payload.get("to_phone_number")
 
     # -------------------------------------------------
     # PARSE TIMESTAMPS
@@ -125,6 +133,8 @@ async def handle_salon_after_call(request: Request):
 
         row = {
             "Creado": created_str,
+            "From Phone Number": from_phone_number,
+            "To Phone Number": to_phone_number,
             "Empiezo Llamada": started_fmt,
             "Termino Llamada": ended_fmt,
             "Duración": duration,
@@ -149,6 +159,7 @@ async def handle_salon_after_call(request: Request):
         }
 
     else:
+
         logger.warning(
             "Unknown channel '%s', defaulting to Chats sheet",
             channel,
@@ -182,10 +193,13 @@ async def handle_salon_after_call(request: Request):
         visit_row = {
             "Creado": created_str,
             "Nombre": confirmed_visit["name"],
+            "From Phone Number": from_phone_number,
+            "To Phone Number": to_phone_number,
             "Motivo": confirmed_visit["purpose"],
             "Fecha": confirmed_visit["visit_date"],
             "Hora": confirmed_visit["visit_time"],
             "ID Conversación": conversation_id,
+            "Canal": channel,
         }
 
         append_row_to_sheet(
