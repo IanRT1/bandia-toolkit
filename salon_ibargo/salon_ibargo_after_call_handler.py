@@ -60,7 +60,6 @@ VISIT_HEADERS = [
     "Fecha",
     "Hora",
     "ID Conversación",
-    "Canal",
 ]
 
 
@@ -199,7 +198,6 @@ async def handle_salon_after_call(request: Request):
             "Fecha": confirmed_visit["visit_date"],
             "Hora": confirmed_visit["visit_time"],
             "ID Conversación": conversation_id,
-            "Canal": channel,
         }
 
         append_row_to_sheet(
