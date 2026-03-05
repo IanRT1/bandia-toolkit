@@ -14,6 +14,7 @@ from __future__ import annotations
 # Standard Library Imports
 # =========================
 import logging
+import httpx
 import os
 
 # =========================
@@ -21,7 +22,7 @@ import os
 # =========================
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 # =========================
 # Campaign: Salon Ibargo
@@ -59,6 +60,40 @@ async def index():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+# ----------------------------
+# RECORDING PROXY
+# ----------------------------
+
+@app.get("/recording")
+async def get_recording(call_sid: str):
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+
+    # Look up the Recording SID from the call_sid
+    lookup_url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Calls/{call_sid}/Recordings.json"
+
+    async with httpx.AsyncClient() as client:
+        lookup = await client.get(lookup_url, auth=(account_sid, auth_token))
+
+    recordings = lookup.json().get("recordings", [])
+    if not recordings:
+        return JSONResponse(status_code=404, content={"error": "recording_not_found"})
+
+    recording_sid = recordings[0]["sid"]
+    mp3_url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Recordings/{recording_sid}.mp3"
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(mp3_url, auth=(account_sid, auth_token))
+
+    if response.status_code != 200:
+        return JSONResponse(status_code=404, content={"error": "recording_not_found"})
+
+    return StreamingResponse(
+        iter([response.content]),
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": f"attachment; filename={call_sid}.mp3"}
+    )
 
 
 # ============================================================

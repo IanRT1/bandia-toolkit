@@ -34,6 +34,7 @@ def extract_base_fields(payload: dict):
 
     return conversation_id, channel
 
+
 # =====================================================
 # ACTION: agendar_cita_disponibilidad
 # =====================================================

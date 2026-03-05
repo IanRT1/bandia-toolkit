@@ -48,6 +48,7 @@ CALL_HEADERS = [
     "Duración",
     "Transcripción",
     "Resumen",
+    "Grabación",
     "ID",
 ]
 
@@ -88,6 +89,7 @@ async def handle_salon_after_call(request: Request):
     # Voice-only metadata (safe for chat)
     from_phone_number = payload.get("from_phone_number")
     to_phone_number = payload.get("to_phone_number")
+    call_sid = payload.get("call_sid")
 
     # -------------------------------------------------
     # PARSE TIMESTAMPS
@@ -127,6 +129,8 @@ async def handle_salon_after_call(request: Request):
 
     if channel == "voice":
 
+        recording_url = f"https://bandia-toolkit-qwt3.onrender.com/recording?call_sid={call_sid}" if call_sid else None
+
         sheet_name = "Llamadas"
         headers = CALL_HEADERS
 
@@ -139,6 +143,7 @@ async def handle_salon_after_call(request: Request):
             "Duración": duration,
             "Transcripción": single_line_transcript,
             "Resumen": summary,
+            "Grabación": recording_url,
             "ID": conversation_id,
         }
 
