@@ -94,7 +94,7 @@ def append_row_to_sheet(
 
     service.spreadsheets().values().append(
         spreadsheetId=SPREADSHEET_ID,
-        range=f"{sheet_name}!A1",
+        range=f"{sheet_name}!A:A",  # only scan column A
         valueInputOption="USER_ENTERED",
         insertDataOption="INSERT_ROWS",
         body={"values": values},
