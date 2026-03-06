@@ -84,15 +84,26 @@ def extract_text(response) -> str:
 # Public API
 # -------------------------------------------------
 
-async def summarize_transcript(transcript: List[TranscriptItem]) -> str:
+async def summarize_transcript(transcript: List[TranscriptItem], channel: str = "voice") -> str:
     """
-    Summarize a call transcript into ONE short paragraph.
-    Returns a ghost call label if there is no coherent user input.
+    Summarize a transcript into ONE short paragraph.
+    Returns a ghost label if there is no coherent user input.
     """
 
-    transcript_text = transcript_to_single_line(transcript)
+    # ── Channel labels ────────────────────────────────────────────────────────
+
+    if channel == "voice":
+        medium = "llamada telefónica"
+        ghost_label = "Llamada Fantasma 👻"
+    elif channel == "chat":
+        medium = "conversación de chat"
+        ghost_label = "Chat Fantasma 👻"
+    else:
+        medium = "conversación"
+        ghost_label = "Fantasma 👻"
 
     # ── Ghost call detection ──────────────────────────────────────────────────
+
     user_turns = [
         item for item in transcript
         if getattr(item, "role", None) == "user"
@@ -103,20 +114,23 @@ async def summarize_transcript(transcript: List[TranscriptItem]) -> str:
     ).strip()
 
     if not user_content or len(user_content) < 10:
-        logger.info("summarize_transcript: ghost call detected (no user input)")
-        return "Llamada fantasma: el cliente no proporcionó ningún mensaje coherente."
+        logger.info("summarize_transcript: ghost detected (no user input) channel=%s", channel)
+        return ghost_label
 
     # ── Summarize ─────────────────────────────────────────────────────────────
+
+    transcript_text = transcript_to_single_line(transcript)
+
     prompt = (
-        "Resume la siguiente llamada telefónica en UN SOLO PÁRRAFO breve. "
+        f"Resume la siguiente {medium} en UN SOLO PÁRRAFO breve. "
         "No uses listas ni encabezados. "
-        "Describe la intención del cliente y cómo terminó la llamada.\n\n"
-        "Si el cliente nunca dijo nada coherente o la llamada fue silenciosa, "
-        "responde ÚNICAMENTE con: 'Llamada Fantasma 👻'\n\n"
+        "Describe la intención del cliente y cómo terminó la conversación.\n\n"
+        f"Si el cliente nunca dijo nada coherente o la {medium} fue silenciosa, "
+        f"responde ÚNICAMENTE con: '{ghost_label}'. No agregar nada extra.\n\n"
         f"{transcript_text}"
     )
 
-    logger.info("summarize_transcript: calling %s", SUM_MODEL)
+    logger.info("summarize_transcript: calling %s channel=%s", SUM_MODEL, channel)
 
     try:
         response = await client.responses.create(
@@ -127,15 +141,15 @@ async def summarize_transcript(transcript: List[TranscriptItem]) -> str:
         result = extract_text(response).strip()
 
     except TimeoutError:
-        logger.warning("summarize_transcript: request timed out")
+        logger.warning("summarize_transcript: request timed out channel=%s", channel)
         return "Resumen no disponible (tiempo de espera agotado)."
 
     except Exception:
-        logger.exception("summarize_transcript: unexpected error")
+        logger.exception("summarize_transcript: unexpected error channel=%s", channel)
         return "Resumen no disponible (error interno)."
 
     if not result:
-        logger.warning("summarize_transcript: model returned empty response")
+        logger.warning("summarize_transcript: model returned empty response channel=%s", channel)
         return "Resumen no disponible (respuesta vacía del modelo)."
 
     return result
