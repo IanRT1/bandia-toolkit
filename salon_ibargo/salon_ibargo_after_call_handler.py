@@ -117,7 +117,10 @@ async def handle_salon_after_call(request: Request):
     if transcript:
         summary = await summarize_transcript(transcript)
     else:
-        summary = "Llamada Fantasma 👻"
+        if channel == "voice":
+            summary = "Llamada Fantasma 👻"
+        if channel == "chat":
+            summary = "Chat Fantasma 👻"
 
     single_line_transcript = transcript_to_single_line(transcript)
 
