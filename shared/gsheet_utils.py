@@ -83,25 +83,31 @@ def append_row_to_sheet(
     headers: List[str],
     row: Dict,
 ):
-    """
-    Generic, order-safe append.
-    Assumes headers already exist in the sheet.
-    """
-
     service = _get_sheets_service()
 
-    values = [[row.get(h) for h in headers]]
+    try:
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{sheet_name}!A:A",
+        ).execute()
 
-    service.spreadsheets().values().append(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{sheet_name}!A:A",  # only scan column A
-        valueInputOption="USER_ENTERED",
-        insertDataOption="INSERT_ROWS",
-        body={"values": values},
-    ).execute()
+        existing = result.get("values", [])
+        next_row = len(existing) + 1
 
-    logger.info("sheet_row_appended sheet=%s", sheet_name)
+        values = [[row.get(h) for h in headers]]
 
+        service.spreadsheets().values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{sheet_name}!A{next_row}",
+            valueInputOption="USER_ENTERED",
+            body={"values": values},
+        ).execute()
+
+        logger.info("sheet_row_appended sheet=%s row=%s", sheet_name, next_row)
+
+    except Exception as e:
+        logger.exception("Failed to append row to sheet=%s error=%s", sheet_name, e)
+        raise
 
 # ------------------------
 # Manual Test
