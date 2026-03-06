@@ -112,7 +112,7 @@ async def summarize_transcript(transcript: List[TranscriptItem]) -> str:
         "No uses listas ni encabezados. "
         "Describe la intención del cliente y cómo terminó la llamada.\n\n"
         "Si el cliente nunca dijo nada coherente o la llamada fue silenciosa, "
-        "responde ÚNICAMENTE con: 'Llamada fantasma'\n\n"
+        "responde ÚNICAMENTE con: 'Llamada Fantasma 👻'\n\n"
         f"{transcript_text}"
     )
 
