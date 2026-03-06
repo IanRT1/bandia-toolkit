@@ -87,25 +87,58 @@ def extract_text(response) -> str:
 async def summarize_transcript(transcript: List[TranscriptItem]) -> str:
     """
     Summarize a call transcript into ONE short paragraph.
+    Returns a ghost call label if there is no coherent user input.
     """
 
     transcript_text = transcript_to_single_line(transcript)
 
+    # ── Ghost call detection ──────────────────────────────────────────────────
+    user_turns = [
+        item for item in transcript
+        if getattr(item, "role", None) == "user"
+    ]
+
+    user_content = " ".join(
+        getattr(item, "content", "") or "" for item in user_turns
+    ).strip()
+
+    if not user_content or len(user_content) < 10:
+        logger.info("summarize_transcript: ghost call detected (no user input)")
+        return "Llamada fantasma: el cliente no proporcionó ningún mensaje coherente."
+
+    # ── Summarize ─────────────────────────────────────────────────────────────
     prompt = (
         "Resume la siguiente llamada telefónica en UN SOLO PÁRRAFO breve. "
         "No uses listas ni encabezados. "
         "Describe la intención del cliente y cómo terminó la llamada.\n\n"
+        "Si el cliente nunca dijo nada coherente o la llamada fue silenciosa, "
+        "responde ÚNICAMENTE con: 'Llamada fantasma'\n\n"
         f"{transcript_text}"
     )
 
-    logger.info(f"summarize_transcript: calling {SUM_MODEL}")
+    logger.info("summarize_transcript: calling %s", SUM_MODEL)
 
-    response = await client.responses.create(
-        model=SUM_MODEL,
-        input=prompt,
-    )
+    try:
+        response = await client.responses.create(
+            model=SUM_MODEL,
+            input=prompt,
+            timeout=10.0,
+        )
+        result = extract_text(response).strip()
 
-    return extract_text(response)
+    except TimeoutError:
+        logger.warning("summarize_transcript: request timed out")
+        return "Resumen no disponible (tiempo de espera agotado)."
+
+    except Exception:
+        logger.exception("summarize_transcript: unexpected error")
+        return "Resumen no disponible (error interno)."
+
+    if not result:
+        logger.warning("summarize_transcript: model returned empty response")
+        return "Resumen no disponible (respuesta vacía del modelo)."
+
+    return result
 
 
 async def normalize_visit_datetime_pst(
@@ -113,8 +146,26 @@ async def normalize_visit_datetime_pst(
     visit_time: str,
 ) -> dict:
 
-    reference_dt = datetime.now(PST)
+    _FALLBACK = {
+        "visit_date": None,
+        "visit_time": None,
+        "visit_datetime_iso": None,
+        "timezone": "America/Los_Angeles",
+        "confidence": "low",
+    }
 
+    # ── Sanitize inputs ───────────────────────────────────────────────────────
+
+    visit_date = (visit_date or "").strip()
+    visit_time = (visit_time or "").strip()
+
+    if not visit_date and not visit_time:
+        logger.warning("normalize_visit_datetime_pst: both inputs are empty")
+        return _FALLBACK
+
+    # ── Build prompt ──────────────────────────────────────────────────────────
+
+    reference_dt = datetime.now(PST)
     reference_date_str = reference_dt.strftime("%Y-%m-%d")
     reference_time_str = reference_dt.strftime("%H:%M")
 
@@ -147,87 +198,87 @@ async def normalize_visit_datetime_pst(
         }}
     """
 
+    # ── Call model ────────────────────────────────────────────────────────────
+
     try:
         response = await client.responses.create(
             model=STD_MODEL,
             input=prompt,
+            timeout=10.0,
         )
+    except TimeoutError:
+        logger.warning("normalize_visit_datetime_pst: model request timed out")
+        return _FALLBACK
+    except Exception:
+        logger.exception("normalize_visit_datetime_pst: model request failed")
+        return _FALLBACK
 
-        raw_text = extract_text(response)
-        logger.info("NORMALIZER RAW MODEL OUTPUT: %s", raw_text)
+    # ── Extract and clean raw text ────────────────────────────────────────────
 
+    raw_text = (extract_text(response) or "").strip()
+    logger.info("NORMALIZER RAW MODEL OUTPUT: %s", raw_text)
+
+    if not raw_text:
+        logger.warning("normalize_visit_datetime_pst: model returned empty response")
+        return _FALLBACK
+
+    # Strip accidental markdown fences (```json ... ```)
+    if raw_text.startswith("```"):
+        raw_text = raw_text.split("```")[1]
+        if raw_text.lower().startswith("json"):
+            raw_text = raw_text[4:]
+        raw_text = raw_text.strip()
+
+    # ── Parse JSON ────────────────────────────────────────────────────────────
+
+    try:
         data = json.loads(raw_text)
+    except json.JSONDecodeError:
+        logger.warning("normalize_visit_datetime_pst: JSON parse failed — raw=%s", raw_text)
+        return _FALLBACK
 
-    except Exception as e:
-        logger.exception("Normalizer model or JSON parsing failed")
-        return {
-            "visit_date": None,
-            "visit_time": None,
-            "visit_datetime_iso": None,
-            "timezone": "America/Los_Angeles",
-            "confidence": "low",
-        }
+    if not isinstance(data, dict):
+        logger.warning("normalize_visit_datetime_pst: parsed JSON is not a dict")
+        return _FALLBACK
 
     logger.info("NORMALIZER PARSED JSON: %s", data)
     logger.info("NORMALIZER CONFIDENCE: %s", data.get("confidence"))
 
-    # -------------------------------------------------
-    # HARD TYPE VALIDATION
-    # -------------------------------------------------
+    # ── Hard type validation ──────────────────────────────────────────────────
 
     date_str = data.get("date")
     time_str = data.get("time")
     confidence = data.get("confidence", "low")
 
     if not isinstance(date_str, str) or not isinstance(time_str, str):
-        logger.warning("Normalizer returned invalid types")
-        return {
-            "visit_date": date_str,
-            "visit_time": time_str,
-            "visit_datetime_iso": None,
-            "timezone": "America/Los_Angeles",
-            "confidence": "low",
-        }
+        logger.warning("normalize_visit_datetime_pst: invalid types date=%r time=%r", date_str, time_str)
+        return {**_FALLBACK, "visit_date": date_str, "visit_time": time_str}
 
-    # -------------------------------------------------
-    # FORMAT VALIDATION
-    # -------------------------------------------------
+    # ── Format validation ─────────────────────────────────────────────────────
 
     try:
         datetime.strptime(date_str, "%Y-%m-%d")
         datetime.strptime(time_str, "%H:%M")
-    except Exception:
-        logger.warning("Normalizer returned invalid date/time format")
-        return {
-            "visit_date": date_str,
-            "visit_time": time_str,
-            "visit_datetime_iso": None,
-            "timezone": "America/Los_Angeles",
-            "confidence": "low",
-        }
+    except ValueError:
+        logger.warning("normalize_visit_datetime_pst: invalid format date=%r time=%r", date_str, time_str)
+        return {**_FALLBACK, "visit_date": date_str, "visit_time": time_str}
 
-    # -------------------------------------------------
-    # CONFIDENCE CHECK
-    # -------------------------------------------------
+    # ── Confidence check ──────────────────────────────────────────────────────
 
     if confidence != "high":
-        logger.info("Visit date/time not high confidence")
-        return {
-            "visit_date": date_str,
-            "visit_time": time_str,
-            "visit_datetime_iso": None,
-            "timezone": "America/Los_Angeles",
-            "confidence": "low",
-        }
+        logger.info("normalize_visit_datetime_pst: low confidence date=%r time=%r", date_str, time_str)
+        return {**_FALLBACK, "visit_date": date_str, "visit_time": time_str}
 
-    # -------------------------------------------------
-    # SAFE DATETIME CONSTRUCTION
-    # -------------------------------------------------
+    # ── Safe datetime construction ────────────────────────────────────────────
 
-    dt = datetime.strptime(
-        f"{date_str} {time_str}",
-        "%Y-%m-%d %H:%M",
-    ).replace(tzinfo=PST)
+    try:
+        dt = datetime.strptime(
+            f"{date_str} {time_str}",
+            "%Y-%m-%d %H:%M",
+        ).replace(tzinfo=PST)
+    except ValueError:
+        logger.exception("normalize_visit_datetime_pst: datetime construction failed")
+        return {**_FALLBACK, "visit_date": date_str, "visit_time": time_str}
 
     result = {
         "visit_date": dt.strftime("%Y-%m-%d"),
@@ -240,6 +291,4 @@ async def normalize_visit_datetime_pst(
     logger.info("NORMALIZER FINAL RESULT: %s", result)
 
     return result
-
-
 
