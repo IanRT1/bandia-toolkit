@@ -102,15 +102,19 @@ async def summarize_transcript(transcript: List[TranscriptItem], channel: str = 
         medium = "conversación"
         ghost_label = "Fantasma 👻"
 
-    # ── Ghost call detection ──────────────────────────────────────────────────
+    # ── Normalize transcript items to dicts ───────────────────────────────────
 
-    user_turns = [
-        item for item in transcript
-        if getattr(item, "role", None) == "user"
+    transcript_dicts = [
+        item if isinstance(item, dict) else vars(item)
+        for item in transcript
     ]
 
+    # ── Ghost call detection ──────────────────────────────────────────────────
+
+    user_turns = [item for item in transcript_dicts if item.get("role") == "user"]
+
     user_content = " ".join(
-        getattr(item, "content", "") or "" for item in user_turns
+        item.get("content", "") or "" for item in user_turns
     ).strip()
 
     if not user_content or len(user_content) < 10:
