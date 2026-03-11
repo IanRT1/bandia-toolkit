@@ -30,7 +30,7 @@ if not OPENAI_API_KEY:
 # OpenAI client (OFFICIAL SDK)
 # -------------------------------------------------
 
-client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+client = AsyncOpenAI(api_key=OPENAI_API_KEY, max_retries=0)
 
 SUM_MODEL = "gpt-5-nano"
 STD_MODEL = "gpt-5-mini"
@@ -186,7 +186,6 @@ async def normalize_visit_datetime_pst(
             model=STD_MODEL,
             messages=[{"role": "user", "content": prompt}],
             timeout=25.0,
-            max_retries=0,
         )
     except TimeoutError:
         logger.warning("normalize_visit_datetime_pst: model request timed out")
