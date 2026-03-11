@@ -185,7 +185,8 @@ async def normalize_visit_datetime_pst(
         response = await client.chat.completions.create(
             model=STD_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            timeout=10.0,
+            timeout=25.0,
+            max_retries=0,
         )
     except TimeoutError:
         logger.warning("normalize_visit_datetime_pst: model request timed out")
