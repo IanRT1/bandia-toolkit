@@ -32,8 +32,8 @@ if not OPENAI_API_KEY:
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-SUM_MODEL = "gpt-5-nano"
-STD_MODEL = "gpt-5-mini"
+SUM_MODEL = "gpt-4o-mini"
+STD_MODEL = "gpt-4o-mini"
 
 # -------------------------------------------------
 # Logging (minimal)
@@ -55,29 +55,11 @@ class TranscriptItem(BaseModel):
 # -------------------------------------------------
 
 def transcript_to_single_line(transcript: list[dict]) -> str:
-    """
-    Expects:
-    [
-        {"role": "user" | "assistant", "content": "text"},
-        ...
-    ]
-    """
-
     return " | ".join(
         f"{item['role'].upper()}: {item['content'].replace('\n', ' ').strip()}"
         for item in transcript
         if item.get("content")
     )
-
-def extract_text(response) -> str:
-    for item in response.output:
-        # Only items that actually contain content
-        if hasattr(item, "content") and item.content:
-            for content in item.content:
-                if getattr(content, "type", None) == "output_text":
-                    return content.text.strip()
-    return ""
-
 
 
 # -------------------------------------------------
@@ -85,12 +67,6 @@ def extract_text(response) -> str:
 # -------------------------------------------------
 
 async def summarize_transcript(transcript: List[TranscriptItem], channel: str = "voice") -> str:
-    """
-    Summarize a transcript into ONE short paragraph.
-    Returns a ghost label if there is no coherent user input.
-    """
-
-    # ── Channel labels ────────────────────────────────────────────────────────
 
     if channel == "voice":
         medium = "llamada telefónica"
@@ -102,17 +78,12 @@ async def summarize_transcript(transcript: List[TranscriptItem], channel: str = 
         medium = "conversación"
         ghost_label = "Fantasma 👻"
 
-    # ── Normalize transcript items to dicts ───────────────────────────────────
-
     transcript_dicts = [
         item if isinstance(item, dict) else vars(item)
         for item in transcript
     ]
 
-    # ── Ghost call detection ──────────────────────────────────────────────────
-
     user_turns = [item for item in transcript_dicts if item.get("role") == "user"]
-
     user_content = " ".join(
         item.get("content", "") or "" for item in user_turns
     ).strip()
@@ -120,8 +91,6 @@ async def summarize_transcript(transcript: List[TranscriptItem], channel: str = 
     if not user_content or len(user_content) < 10:
         logger.info("summarize_transcript: ghost detected (no user input) channel=%s", channel)
         return ghost_label
-
-    # ── Summarize ─────────────────────────────────────────────────────────────
 
     transcript_text = transcript_to_single_line(transcript)
 
@@ -137,12 +106,12 @@ async def summarize_transcript(transcript: List[TranscriptItem], channel: str = 
     logger.info("summarize_transcript: calling %s channel=%s", SUM_MODEL, channel)
 
     try:
-        response = await client.responses.create(
+        response = await client.chat.completions.create(
             model=SUM_MODEL,
-            input=prompt,
+            messages=[{"role": "user", "content": prompt}],
             timeout=10.0,
         )
-        result = extract_text(response).strip()
+        result = response.choices[0].message.content.strip()
 
     except TimeoutError:
         logger.warning("summarize_transcript: request timed out channel=%s", channel)
@@ -172,16 +141,12 @@ async def normalize_visit_datetime_pst(
         "confidence": "low",
     }
 
-    # ── Sanitize inputs ───────────────────────────────────────────────────────
-
     visit_date = (visit_date or "").strip()
     visit_time = (visit_time or "").strip()
 
     if not visit_date and not visit_time:
         logger.warning("normalize_visit_datetime_pst: both inputs are empty")
         return _FALLBACK
-
-    # ── Build prompt ──────────────────────────────────────────────────────────
 
     reference_dt = datetime.now(PST)
     reference_date_str = reference_dt.strftime("%Y-%m-%d")
@@ -216,12 +181,10 @@ async def normalize_visit_datetime_pst(
         }}
     """
 
-    # ── Call model ────────────────────────────────────────────────────────────
-
     try:
-        response = await client.responses.create(
+        response = await client.chat.completions.create(
             model=STD_MODEL,
-            input=prompt,
+            messages=[{"role": "user", "content": prompt}],
             timeout=10.0,
         )
     except TimeoutError:
@@ -231,23 +194,18 @@ async def normalize_visit_datetime_pst(
         logger.exception("normalize_visit_datetime_pst: model request failed")
         return _FALLBACK
 
-    # ── Extract and clean raw text ────────────────────────────────────────────
-
-    raw_text = (extract_text(response) or "").strip()
+    raw_text = response.choices[0].message.content.strip()
     logger.info("NORMALIZER RAW MODEL OUTPUT: %s", raw_text)
 
     if not raw_text:
         logger.warning("normalize_visit_datetime_pst: model returned empty response")
         return _FALLBACK
 
-    # Strip accidental markdown fences (```json ... ```)
     if raw_text.startswith("```"):
         raw_text = raw_text.split("```")[1]
         if raw_text.lower().startswith("json"):
             raw_text = raw_text[4:]
         raw_text = raw_text.strip()
-
-    # ── Parse JSON ────────────────────────────────────────────────────────────
 
     try:
         data = json.loads(raw_text)
@@ -262,8 +220,6 @@ async def normalize_visit_datetime_pst(
     logger.info("NORMALIZER PARSED JSON: %s", data)
     logger.info("NORMALIZER CONFIDENCE: %s", data.get("confidence"))
 
-    # ── Hard type validation ──────────────────────────────────────────────────
-
     date_str = data.get("date")
     time_str = data.get("time")
     confidence = data.get("confidence", "low")
@@ -272,8 +228,6 @@ async def normalize_visit_datetime_pst(
         logger.warning("normalize_visit_datetime_pst: invalid types date=%r time=%r", date_str, time_str)
         return {**_FALLBACK, "visit_date": date_str, "visit_time": time_str}
 
-    # ── Format validation ─────────────────────────────────────────────────────
-
     try:
         datetime.strptime(date_str, "%Y-%m-%d")
         datetime.strptime(time_str, "%H:%M")
@@ -281,13 +235,9 @@ async def normalize_visit_datetime_pst(
         logger.warning("normalize_visit_datetime_pst: invalid format date=%r time=%r", date_str, time_str)
         return {**_FALLBACK, "visit_date": date_str, "visit_time": time_str}
 
-    # ── Confidence check ──────────────────────────────────────────────────────
-
     if confidence != "high":
         logger.info("normalize_visit_datetime_pst: low confidence date=%r time=%r", date_str, time_str)
         return {**_FALLBACK, "visit_date": date_str, "visit_time": time_str}
-
-    # ── Safe datetime construction ────────────────────────────────────────────
 
     try:
         dt = datetime.strptime(
@@ -310,3 +260,15 @@ async def normalize_visit_datetime_pst(
 
     return result
 
+
+if __name__ == "__main__":
+    import asyncio
+
+    async def test():
+        result = await normalize_visit_datetime_pst(
+            visit_date="jueves 12 de marzo",
+            visit_time="1:00 pm",
+        )
+        print(result)
+
+    asyncio.run(test())
