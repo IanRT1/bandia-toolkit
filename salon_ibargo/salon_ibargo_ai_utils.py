@@ -27,7 +27,7 @@ if not OPENAI_API_KEY:
     raise RuntimeError("OPENAI_API_KEY not found in .env")
 
 # -------------------------------------------------
-# OpenAI client (OFFICIAL SDK)
+# OpenAI client
 # -------------------------------------------------
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY, max_retries=0)
@@ -49,6 +49,7 @@ logger = logging.getLogger("ai_utils")
 class TranscriptItem(BaseModel):
     role: str
     content: str
+
 
 # -------------------------------------------------
 # Helpers
@@ -106,12 +107,13 @@ async def summarize_transcript(transcript: List[TranscriptItem], channel: str = 
     logger.info("summarize_transcript: calling %s channel=%s", SUM_MODEL, channel)
 
     try:
-        response = await client.chat.completions.create(
+        response = await client.responses.create(
             model=SUM_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+            input=[{"role": "user", "content": prompt}],
             timeout=10.0,
         )
-        result = response.choices[0].message.content.strip()
+
+        result = response.output_text.strip()
 
     except TimeoutError:
         logger.warning("summarize_transcript: request timed out channel=%s", channel)
@@ -182,11 +184,12 @@ async def normalize_visit_datetime_pst(
     """
 
     try:
-        response = await client.chat.completions.create(
+        response = await client.responses.create(
             model=STD_MODEL,
-            messages=[{"role": "user", "content": prompt}],
+            input=[{"role": "user", "content": prompt}],
             timeout=25.0,
         )
+
     except TimeoutError:
         logger.warning("normalize_visit_datetime_pst: model request timed out")
         return _FALLBACK
@@ -194,7 +197,7 @@ async def normalize_visit_datetime_pst(
         logger.exception("normalize_visit_datetime_pst: model request failed")
         return _FALLBACK
 
-    raw_text = response.choices[0].message.content.strip()
+    raw_text = response.output_text.strip()
     logger.info("NORMALIZER RAW MODEL OUTPUT: %s", raw_text)
 
     if not raw_text:
