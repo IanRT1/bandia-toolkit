@@ -32,8 +32,8 @@ if not OPENAI_API_KEY:
 
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-SUM_MODEL = "gpt-4o-mini"
-STD_MODEL = "gpt-4o-mini"
+SUM_MODEL = "gpt-5-nano"
+STD_MODEL = "gpt-5-mini"
 
 # -------------------------------------------------
 # Logging (minimal)
