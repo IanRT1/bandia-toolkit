@@ -110,7 +110,7 @@ async def summarize_transcript(transcript: List[TranscriptItem], channel: str = 
         response = await client.responses.create(
             model=SUM_MODEL,
             input=[{"role": "user", "content": prompt}],
-            timeout=10.0,
+            timeout=30.0,
         )
 
         result = response.output_text.strip()
