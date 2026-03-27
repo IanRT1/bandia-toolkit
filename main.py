@@ -16,29 +16,23 @@ from __future__ import annotations
 import logging
 import httpx
 import os
-from datetime import datetime
-from urllib.parse import urlencode
-from zoneinfo import ZoneInfo
 
 # =========================
 # Third-Party Imports
 # =========================
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse, Response
-from twilio.rest import Client
-from twilio.twiml.voice_response import VoiceResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 # =========================
 # Campaign: Salon Ibargo
 # =========================
-from salon_ibargo.salon_ibargo_call_routing import salon_ibargo_inbound_call
 from salon_ibargo.salon_ibargo_after_call_handler import handle_salon_after_call
 from salon_ibargo.salon_ibargo_actions import (
     agendar_cita_disponibilidad_endpoint,
     cotizar_evento_endpoint,
 )
-
+from salon_ibargo.salon_ibargo_call_routing import salon_ibargo_inbound_call
 
 # =========================
 # Bootstrap
@@ -54,60 +48,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-
-# ============================================================
-# SALON IBARGO - VOICE ROUTING CONFIG
-# ============================================================
-
-BUSINESS_TZ = ZoneInfo("America/Tijuana")
-
-SALON_AGENT_SIP_URI = os.getenv(
-    "SALON_AGENT_SIP_URI",
-    "sip:1iyto3q7gfe.sip.livekit.cloud",
-)
-
-CARLOS_NUMBER = os.getenv("CARLOS_NUMBER", "+526862887006")
-
-SALON_BUSINESS_HOURS_START = int(os.getenv("SALON_BUSINESS_HOURS_START", "7"))
-SALON_BUSINESS_HOURS_END = int(os.getenv("SALON_BUSINESS_HOURS_END", "23"))
-
-# Ojo: Twilio suele agregar unos segundos extra reales al timeout de <Dial>.
-# Si quieres aprox 12 segundos reales, 7 suele ser buena base.
-CARLOS_RING_TIMEOUT = int(os.getenv("CARLOS_RING_TIMEOUT", "7"))
-
-# Tiempo para que Carlos presione 1 o 2 después de contestar
-CARLOS_SCREEN_TIMEOUT = int(os.getenv("CARLOS_SCREEN_TIMEOUT", "10"))
-
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-
-twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-
-
-# =========================
-# Helpers
-# =========================
-
-def get_base_url(request: Request) -> str:
-    forwarded_proto = request.headers.get("x-forwarded-proto")
-    forwarded_host = request.headers.get("x-forwarded-host")
-
-    if forwarded_proto and forwarded_host:
-        return f"{forwarded_proto}://{forwarded_host}"
-
-    return str(request.base_url).rstrip("/")
-
-
-def is_salon_business_hours() -> bool:
-    now = datetime.now(BUSINESS_TZ)
-    return SALON_BUSINESS_HOURS_START <= now.hour < SALON_BUSINESS_HOURS_END
-
-
-def build_agent_twiml() -> str:
-    vr = VoiceResponse()
-    dial = vr.dial(answer_on_bridge=True)
-    dial.sip(SALON_AGENT_SIP_URI)
-    return str(vr)
 
 
 # =========================
@@ -161,6 +101,15 @@ async def get_recording(call_sid: str):
 # ============================================================
 # CAMPAIGN: SALON IBARGO
 # ============================================================
+
+# ----------------------------
+# INBOUND CALL (NEW CLEAN ROUTE)
+# ----------------------------
+
+@app.post("/salon_ibargo/inbound_call")
+async def salon_ibargo_inbound_call_route(request: Request):
+    return await salon_ibargo_inbound_call(request)
+
 
 # ----------------------------
 # AFTER CALL
