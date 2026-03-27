@@ -1,56 +1,163 @@
+"""
+automation_service/main.py
+--------------------------------
+Central webhook entrypoint for all campaigns.
+Supports:
+- AFTER CALL handlers
+- ACTION endpoints
+- Clean campaign separation
+"""
+
 from __future__ import annotations
+
+# =========================
+# Standard Library Imports
+# =========================
 import logging
+import httpx
 import os
+
+# =========================
+# Third-Party Imports
+# =========================
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, StreamingResponse
+
+# =========================
+# Campaign: Salon Ibargo
+# =========================
+from salon_ibargo.salon_ibargo_after_call_handler import handle_salon_after_call
+from salon_ibargo.salon_ibargo_actions import (
+    agendar_cita_disponibilidad_endpoint,
+    cotizar_evento_endpoint,
+)
+
+# =========================
+# Bootstrap
+# =========================
 
 load_dotenv()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+)
+
 logger = logging.getLogger(__name__)
+
 app = FastAPI()
 
-SALON_GUY_PHONE = "+526865102851"
-LK_SIP_URI = "sip:1iyto3q7gfe.sip.livekit.cloud"
 
-@app.post("/twilio-inbound")
-async def twilio_smart_router(request: Request):
-    form_data = await request.form()
-    client_number = form_data.get("From", "Unknown")
-    
-    # Timeout de 13 segundos: tiempo suficiente para 3 timbres, 
-    # pero antes de que la red celular de México fuerce su propio buzón.
-    return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
-        <Response>
-            <Dial timeout="13" callerId="{client_number}" action="/twilio-fallback" method="POST">
-                <Number>{SALON_GUY_PHONE}</Number>
-            </Dial>
-        </Response>
-    """, media_type="application/xml")
+# =========================
+# General Health
+# =========================
 
-@app.post("/twilio-fallback")
-async def twilio_fallback(request: Request):
-    form_data = await request.form()
-    status = form_data.get("DialCallStatus")
-    bridged = str(form_data.get("DialBridged", "false")).lower()
-    
-    logger.info(f"--- FALLBACK --- Status: {status} | Bridged: {bridged}")
-    
-    # Si NO se conectó con el humano (bridged == false) 
-    # o el status indica que no hubo respuesta/error.
-    if bridged == "false" or status in ["no-answer", "busy", "failed"]:
-        logger.info(f"EJECUTANDO RESCATE: Transfiriendo a IA Mia (Status: {status})")
-        return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
-            <Response>
-                <Say language="es-MX">Conectando con un agente.</Say>
-                <Dial>
-                    <Sip>{LK_SIP_URI}</Sip>
-                </Dial>
-            </Response>
-        """, media_type="application/xml")
-    
-    # Si bridged es true, significa que tu primo sí contestó y ya terminaron de hablar.
-    return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
+@app.get("/")
+async def index():
+    return {"status": "ok", "service": "automation_service"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+# ----------------------------
+# RECORDING PROXY
+# ----------------------------
+
+@app.get("/recording")
+async def get_recording(call_sid: str):
+    account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+    auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+
+    # Look up the Recording SID from the call_sid
+    lookup_url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Calls/{call_sid}/Recordings.json"
+
+    async with httpx.AsyncClient() as client:
+        lookup = await client.get(lookup_url, auth=(account_sid, auth_token))
+
+    recordings = lookup.json().get("recordings", [])
+    if not recordings:
+        return JSONResponse(status_code=404, content={"error": "recording_not_found"})
+
+    recording_sid = recordings[0]["sid"]
+    mp3_url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Recordings/{recording_sid}.mp3"
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(mp3_url, auth=(account_sid, auth_token))
+
+    if response.status_code != 200:
+        return JSONResponse(status_code=404, content={"error": "recording_not_found"})
+
+    return StreamingResponse(
+        iter([response.content]),
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": f"attachment; filename={call_sid}.mp3"}
+    )
+
+
+# ============================================================
+# CAMPAIGN: SALON IBARGO
+# ============================================================
+
+# ----------------------------
+# AFTER CALL
+# ----------------------------
+
+@app.post("/salon_ibargo_after_call")
+async def salon_ibargo_after_call_route(request: Request):
+    """
+    Salon Ibargo – After Call automation
+    """
+    return await handle_salon_after_call(request)
+
+
+# ----------------------------
+# ACTION: agendar_cita_disponibilidad
+# ----------------------------
+
+@app.post("/salon_ibargo_agendar_cita_disponibilidad")
+async def salon_ibargo_agendar_cita_route(request: Request):
+    return await agendar_cita_disponibilidad_endpoint(request)
+
+
+# ----------------------------
+# ACTION: cotizar_evento
+# ----------------------------
+
+@app.post("/salon_ibargo_cotizar_evento")
+async def salon_ibargo_cotizar_evento_route(request: Request):
+    return await cotizar_evento_endpoint(request)
+
+
+# ============================================================
+# GLOBAL ERROR HANDLER
+# ============================================================
+
+@app.exception_handler(Exception)
+async def global_error_handler(request: Request, e: Exception):
+    logger.exception("Unhandled exception during request")
+    return JSONResponse(
+        status_code=500,
+        content={"error": "internal_server_error"},
+    )
+
+
+# ============================================================
+# Local Dev Entrypoint
+# ============================================================
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+    host = os.environ.get("HOST", "0.0.0.0")
+    port = int(os.environ.get("PORT", 5000))
+
+    logger.info("Starting automation service on http://%s:%s", host, port)
+
+    uvicorn.run(
+        "main:app",
+        host=host,
+        port=port,
+        reload=False,
+    )
