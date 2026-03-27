@@ -4,7 +4,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import Request
-from twilio.rest import Client
 
 from salon_ibargo.salon_ibargo_ai_utils import (
     summarize_transcript,
@@ -25,11 +24,6 @@ logger = logging.getLogger("salon_ibargo_after_conversation")
 # =====================================================
 
 PST = ZoneInfo("America/Los_Angeles")
-twilio_client = Client(
-    os.environ.get("TWILIO_ACCOUNT_SID"),
-    os.environ.get("TWILIO_AUTH_TOKEN"),
-)
-
 
 # =====================================================
 # SHEET HEADERS (MATCH GOOGLE SHEETS EXACTLY)
@@ -97,14 +91,9 @@ async def handle_salon_after_call(request: Request):
     to_phone_number = payload.get("to_phone_number")
     call_sid = payload.get("call_sid")
 
-    # after extracting attrs, where call_sid is set
-    if not to_phone_number and call_sid:
-        try:
-            call = twilio_client.calls(call_sid).fetch()
-            to_phone_number = call.to
-        except Exception:
-            logger.warning("Could not fetch to_phone_number from Twilio | call_sid=%s", call_sid)
-            
+    if not to_phone_number:
+        to_phone_number = os.environ.get("SALON_IBARGO_PHONE_NUMBER")
+
     # -------------------------------------------------
     # PARSE TIMESTAMPS
     # -------------------------------------------------
