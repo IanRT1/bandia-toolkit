@@ -94,7 +94,7 @@ async def twilio_smart_router(request: Request):
         # answerOnBridge="true" ensures fallback works if the owner declines or ignore.
         return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
             <Response>
-                <Dial timeout="20" callerId="{client_number}" action="/twilio-fallback" answerOnBridge="true">
+                <Dial timeout="15" callerId="{client_number}" action="/twilio-fallback" answerOnBridge="true">
                     <Number url="/twilio-whisper">{SALON_GUY_PHONE}</Number>
                 </Dial>
             </Response>
@@ -148,9 +148,14 @@ async def twilio_fallback(request: Request):
     
     logger.info(f"Human routing failed. Status: {status}. Connecting to LiveKit AI.")
     
+    # IMPORTANTE: Si el estado es 'completed' pero llegó aquí, significa que el humano colgó 
+    # antes de que se creara el puente. Forzamos el marcado al SIP.
     return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
         <Response>
-            <Dial><Sip>{LK_SIP_URI}</Sip></Dial>
+            <Say language="es-MX">Un momento, por favor.</Say>
+            <Dial>
+                <Sip>{LK_SIP_URI}</Sip>
+            </Dial>
         </Response>
     """, media_type="application/xml")
 
