@@ -78,6 +78,10 @@ async def health_check():
 
 @app.post("/twilio-inbound")
 async def twilio_smart_router(request: Request):
+    """
+    Punto de entrada principal. 
+    Eliminamos el whisper de la llamada inicial para evitar lag en el timbrado.
+    """
     now = datetime.now(tz=PST_ZONE)
     is_biz_hours = BIZ_START <= now.hour < BIZ_END
     
@@ -85,15 +89,15 @@ async def twilio_smart_router(request: Request):
     client_number = form_data.get("From", "Unknown")
     call_sid = form_data.get("CallSid", "Unknown")
 
-    # LOG DE ENTRADA
-    logger.info(f"--- NUEVA LLAMADA --- SID: {call_sid} | Desde: {client_number} | Horario: {is_biz_hours}")
+    logger.info(f"--- ENTRADA --- SID: {call_sid} | De: {client_number} | Horario: {is_biz_hours}") [cite: 2]
 
     if is_biz_hours:
-        # ELIMINAMOS answerOnBridge y usamos un flujo secuencial más agresivo
+        # Si el Dial falla (decline/timeout), Twilio IRÁ a la URL de 'action'
+        # Quitamos answerOnBridge para que el fallback sea más sensible al colgado del dueño
         return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
             <Response>
                 <Dial timeout="15" callerId="{client_number}" action="/twilio-fallback" method="POST">
-                    <Number url="/twilio-whisper">{SALON_GUY_PHONE}</Number>
+                    <Number>{SALON_GUY_PHONE}</Number>
                 </Dial>
             </Response>
         """, media_type="application/xml")
@@ -105,10 +109,37 @@ async def twilio_smart_router(request: Request):
             </Response>
         """, media_type="application/xml")
 
+@app.post("/twilio-fallback")
+async def twilio_fallback(request: Request):
+    """
+    Esta ruta rescata la llamada si el humano no atiende o rechaza.
+    """
+    form_data = await request.form()
+    status = form_data.get("DialCallStatus")
+    bridged = form_data.get("DialBridged") 
+    sid = form_data.get("CallSid", "Unknown")
+    
+    logger.info(f"--- FALLBACK --- SID: {sid} | Status: {status} | Bridged: {bridged}") [cite: 5]
+    
+    # Si 'bridged' es false, significa que el cliente NUNCA habló con el humano
+    # Por lo tanto, Mia debe entrar sin importar si el status dice 'completed'
+    if bridged == "false" or status in ["busy", "no-answer", "canceled", "failed"]:
+        logger.info(f"Rescatando llamada para IA Mia. Motivo: Bridged={bridged}, Status={status}") [cite: 5]
+        return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Dial>
+                    <Sip>{LK_SIP_URI}</Sip>
+                </Dial>
+            </Response>
+        """, media_type="application/xml")
+    
+    return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
+
+# Mantenemos estas rutas por si decides volver a usarlas, pero no afectan el flujo actual
 @app.post("/twilio-whisper")
 async def twilio_whisper(request: Request):
     form_data = await request.form()
-    logger.info(f"Whisper disparado para el dueño. SID: {form_data.get('CallSid')}")
+    logger.info(f"Whisper disparado. SID: {form_data.get('CallSid')}") [cite: 3, 4]
     return Response(content="""<?xml version="1.0" encoding="UTF-8"?>
         <Response>
             <Gather numDigits="1" timeout="10" action="/twilio-connect-confirm">
@@ -122,42 +153,11 @@ async def twilio_whisper(request: Request):
 async def twilio_connect_confirm(request: Request):
     form_data = await request.form()
     digit = form_data.get("Digits")
-    sid = form_data.get("CallSid")
-    
     if digit == "1":
-        logger.info(f"DUEÑO PRESIONÓ 1. Conectando... SID: {sid}")
         return Response(content="""<?xml version="1.0" encoding="UTF-8"?>
-            <Response><Say language="es-MX">Conectando ahora.</Say></Response>
+            <Response><Say language="es-MX">Conectando.</Say></Response>
         """, media_type="application/xml")
-    
-    logger.info(f"DUEÑO NO PRESIONÓ 1 (Marcó: {digit}). SID: {sid}")
     return Response(content="""<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>""", media_type="application/xml")
-
-@app.post("/twilio-fallback")
-async def twilio_fallback(request: Request):
-    form_data = await request.form()
-    
-    # LOGS DETALLADOS PARA DEBUGEAR
-    status = form_data.get("DialCallStatus")
-    reason = form_data.get("DialCallStatus", "N/A")
-    sid = form_data.get("CallSid", "Unknown")
-    
-    logger.info(f"--- FALLBACK ACTIVADO --- SID: {sid} | Status Recibido: {status} | Todo el Form: {dict(form_data)}")
-    
-    # Si el estado no es 'completed' (que significa que el humano NO habló con el cliente)
-    # o si simplemente queremos que la IA rescate CUALQUIER cosa que llegue aquí:
-    if status in ["completed", "busy", "no-answer", "canceled", "failed"]:
-        logger.info(f"Redirigiendo a IA Mia por estado: {status}")
-        return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
-            <Response>
-                <Say language="es-MX">Por favor espere un momento.</Say>
-                <Dial>
-                    <Sip>{LK_SIP_URI}</Sip>
-                </Dial>
-            </Response>
-        """, media_type="application/xml")
-    
-    return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
 
 
 # ----------------------------
@@ -168,7 +168,6 @@ async def twilio_fallback(request: Request):
 async def get_recording(call_sid: str):
     account_sid = os.getenv("TWILIO_ACCOUNT_SID")
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-
     lookup_url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Calls/{call_sid}/Recordings.json"
 
     async with httpx.AsyncClient() as client:
