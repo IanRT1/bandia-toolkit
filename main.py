@@ -103,7 +103,7 @@ async def get_recording(call_sid: str):
 # ============================================================
 
 # ----------------------------
-# INBOUND CALL (NEW CLEAN ROUTE)
+# INBOUND CALL
 # ----------------------------
 
 @app.post("/salon_ibargo/inbound_call")
