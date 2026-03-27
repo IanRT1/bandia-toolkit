@@ -27,11 +27,16 @@ from fastapi.responses import JSONResponse, StreamingResponse
 # =========================
 # Campaign: Salon Ibargo
 # =========================
-from salon_ibargo.salon_ibargo_call_routing import salon_ibargo_inbound_call
 from salon_ibargo.salon_ibargo_after_call_handler import handle_salon_after_call
 from salon_ibargo.salon_ibargo_actions import (
     agendar_cita_disponibilidad_endpoint,
     cotizar_evento_endpoint,
+)
+from salon_ibargo.salon_ibargo_call_routing import (
+    salon_ibargo_inbound_call,
+    screen_call,
+    screen_result,
+    dial_action,
 )
 
 # =========================
@@ -110,6 +115,17 @@ async def get_recording(call_sid: str):
 async def salon_ibargo_inbound_call_route(request: Request):
     return await salon_ibargo_inbound_call(request)
 
+@app.post("/salon_ibargo/call/screen")
+async def salon_ibargo_screen_route(request: Request):
+    return await screen_call(request)
+
+@app.post("/salon_ibargo/call/screen_result")
+async def salon_ibargo_screen_result_route(request: Request):
+    return await screen_result(request)
+
+@app.post("/salon_ibargo/call/dial_action")
+async def salon_ibargo_dial_action_route(request: Request):
+    return await dial_action(request)
 
 # ----------------------------
 # AFTER CALL
