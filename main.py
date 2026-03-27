@@ -55,8 +55,8 @@ app = FastAPI()
 # NEW: SALON IBARGO SMART ROUTING CONFIG
 # ============================================================
 PST_ZONE = ZoneInfo("America/Los_Angeles")
-BIZ_START = 10
-BIZ_END = 17
+BIZ_START = 8
+BIZ_END = 23
 SALON_GUY_PHONE = "+526865102851"
 LK_SIP_URI = "sip:1iyto3q7gfe.sip.livekit.cloud"
 
