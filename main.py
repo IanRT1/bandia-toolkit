@@ -87,16 +87,11 @@ async def twilio_smart_router(request: Request):
     logger.info(f"Inbound call from {client_number}. Biz hours: {is_biz_hours}")
 
     if is_biz_hours:
-        # Quitamos el 'action' del Dial. Si el Dial termina (por decline o timeout), 
-        # Twilio seguirá ejecutando lo que esté ABAJO.
+        # Si el Dial falla (decline/timeout), Twilio IRÁ a la URL de 'action'
         return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
             <Response>
-                <Dial timeout="15" callerId="{client_number}" answerOnBridge="true">
+                <Dial timeout="15" callerId="{client_number}" action="/twilio-fallback" answerOnBridge="true">
                     <Number url="/twilio-whisper">{SALON_GUY_PHONE}</Number>
-                </Dial>
-                <Say language="es-MX">Un momento, por favor, le paso a nuestra asistente virtual.</Say>
-                <Dial>
-                    <Sip>{LK_SIP_URI}</Sip>
                 </Dial>
             </Response>
         """, media_type="application/xml")
@@ -107,23 +102,12 @@ async def twilio_smart_router(request: Request):
             </Response>
         """, media_type="application/xml")
 
-@app.post("/twilio-fallback")
-async def twilio_fallback(request: Request):
-    # Esta ruta ya casi no se usará con la nueva lógica, 
-    # pero la dejamos por seguridad apuntando a la IA.
-    return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
-        <Response>
-            <Dial><Sip>{LK_SIP_URI}</Sip></Dial>
-        </Response>
-    """, media_type="application/xml")
-
 @app.post("/twilio-whisper")
 async def twilio_whisper():
-    """Plays only to the owner. Requires '1' to confirm answer."""
     return Response(content="""<?xml version="1.0" encoding="UTF-8"?>
         <Response>
             <Gather numDigits="1" timeout="10" action="/twilio-connect-confirm">
-                <Say language="es-MX">Llamada de cliente de Salon Ibargo. Presiona uno para contestar.</Say>
+                <Say language="es-MX">Llamada de cliente. Presiona uno para contestar.</Say>
             </Gather>
             <Hangup/>
         </Response>
@@ -131,32 +115,29 @@ async def twilio_whisper():
 
 @app.post("/twilio-connect-confirm")
 async def twilio_connect_confirm(request: Request):
-    """Bridge the call once the owner presses 1."""
     form_data = await request.form()
     digit = form_data.get("Digits")
-    
     if digit == "1":
         logger.info("Owner pressed 1. Connecting call.")
         return Response(content="""<?xml version="1.0" encoding="UTF-8"?>
-            <Response>
-                <Say language="es-MX">Conectando.</Say>
-            </Response>
+            <Response><Say language="es-MX">Conectando.</Say></Response>
         """, media_type="application/xml")
-    else:
-        logger.info(f"Owner pressed {digit} instead of 1. Hanging up leg.")
-        return Response(content="""<?xml version="1.0" encoding="UTF-8"?>
-            <Response>
-                <Hangup/>
-            </Response>
-        """, media_type="application/xml")
+    
+    logger.info(f"Owner pressed {digit} or timeout. Hanging up leg.")
+    return Response(content="""<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>""", media_type="application/xml")
 
 @app.post("/twilio-fallback")
 async def twilio_fallback(request: Request):
-    # Esta ruta ya casi no se usará con la nueva lógica, 
-    # pero la dejamos por seguridad apuntando a la IA.
+    # Si llega aquí, es porque el humano no contestó o colgó (DialCallStatus != 'completed')
+    form_data = await request.form()
+    status = form_data.get("DialCallStatus")
+    logger.info(f"Ejecutando fallback directo a IA. Status: {status}")
+    
     return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
         <Response>
-            <Dial><Sip>{LK_SIP_URI}</Sip></Dial>
+            <Dial>
+                <Sip>{LK_SIP_URI}</Sip>
+            </Dial>
         </Response>
     """, media_type="application/xml")
 
@@ -199,27 +180,13 @@ async def get_recording(call_sid: str):
 # CAMPAIGN: SALON IBARGO
 # ============================================================
 
-# ----------------------------
-# AFTER CALL
-# ----------------------------
-
 @app.post("/salon_ibargo_after_call")
 async def salon_ibargo_after_call_route(request: Request):
     return await handle_salon_after_call(request)
 
-
-# ----------------------------
-# ACTION: agendar_cita_disponibilidad
-# ----------------------------
-
 @app.post("/salon_ibargo_agendar_cita_disponibilidad")
 async def salon_ibargo_agendar_cita_route(request: Request):
     return await agendar_cita_disponibilidad_endpoint(request)
-
-
-# ----------------------------
-# ACTION: cotizar_evento
-# ----------------------------
 
 @app.post("/salon_ibargo_cotizar_evento")
 async def salon_ibargo_cotizar_evento_route(request: Request):
@@ -245,15 +212,7 @@ async def global_error_handler(request: Request, e: Exception):
 
 if __name__ == "__main__":
     import uvicorn
-
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", 5000))
-
     logger.info("Starting automation service on http://%s:%s", host, port)
-
-    uvicorn.run(
-        "main:app",
-        host=host,
-        port=port,
-        reload=False,
-    )
+    uvicorn.run("main:app", host=host, port=port, reload=False)
