@@ -24,6 +24,11 @@ google-auth-httplib2
 google-auth-oauthlib
 
 # ==============================
+# Twilio
+# ==============================
+twilio
+
+# ==============================
 # Optional (recommended for prod stability)
 # ==============================
 httpx
