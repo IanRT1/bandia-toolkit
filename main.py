@@ -27,12 +27,12 @@ from fastapi.responses import JSONResponse, StreamingResponse
 # =========================
 # Campaign: Salon Ibargo
 # =========================
+from salon_ibargo.salon_ibargo_call_routing import salon_ibargo_inbound_call
 from salon_ibargo.salon_ibargo_after_call_handler import handle_salon_after_call
 from salon_ibargo.salon_ibargo_actions import (
     agendar_cita_disponibilidad_endpoint,
     cotizar_evento_endpoint,
 )
-from salon_ibargo.salon_ibargo_call_routing import salon_ibargo_inbound_call
 
 # =========================
 # Bootstrap
