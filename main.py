@@ -78,10 +78,6 @@ async def health_check():
 
 @app.post("/twilio-inbound")
 async def twilio_smart_router(request: Request):
-    """
-    Entry point for Twilio calls. 
-    Decides between routing to human (with whisper) or AI.
-    """
     now = datetime.now(tz=PST_ZONE)
     is_biz_hours = BIZ_START <= now.hour < BIZ_END
     
@@ -91,21 +87,35 @@ async def twilio_smart_router(request: Request):
     logger.info(f"Inbound call from {client_number}. Biz hours: {is_biz_hours}")
 
     if is_biz_hours:
-        # answerOnBridge="true" ensures fallback works if the owner declines or ignore.
+        # Quitamos el 'action' del Dial. Si el Dial termina (por decline o timeout), 
+        # Twilio seguirá ejecutando lo que esté ABAJO.
         return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
             <Response>
-                <Dial timeout="15" callerId="{client_number}" action="/twilio-fallback" answerOnBridge="true">
+                <Dial timeout="15" callerId="{client_number}" answerOnBridge="true">
                     <Number url="/twilio-whisper">{SALON_GUY_PHONE}</Number>
+                </Dial>
+                <Say language="es-MX">Un momento, por favor, le paso a nuestra asistente virtual.</Say>
+                <Dial>
+                    <Sip>{LK_SIP_URI}</Sip>
                 </Dial>
             </Response>
         """, media_type="application/xml")
     else:
-        # Outside hours -> Straight to AI agent via SIP
         return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
             <Response>
                 <Dial><Sip>{LK_SIP_URI}</Sip></Dial>
             </Response>
         """, media_type="application/xml")
+
+@app.post("/twilio-fallback")
+async def twilio_fallback(request: Request):
+    # Esta ruta ya casi no se usará con la nueva lógica, 
+    # pero la dejamos por seguridad apuntando a la IA.
+    return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
+        <Response>
+            <Dial><Sip>{LK_SIP_URI}</Sip></Dial>
+        </Response>
+    """, media_type="application/xml")
 
 @app.post("/twilio-whisper")
 async def twilio_whisper():
@@ -142,20 +152,11 @@ async def twilio_connect_confirm(request: Request):
 
 @app.post("/twilio-fallback")
 async def twilio_fallback(request: Request):
-    """If the owner doesn't answer, declines, or presses nothing, connect to LiveKit AI."""
-    form_data = await request.form()
-    status = form_data.get("DialCallStatus")
-    
-    logger.info(f"Human routing failed. Status: {status}. Connecting to LiveKit AI.")
-    
-    # IMPORTANTE: Si el estado es 'completed' pero llegó aquí, significa que el humano colgó 
-    # antes de que se creara el puente. Forzamos el marcado al SIP.
+    # Esta ruta ya casi no se usará con la nueva lógica, 
+    # pero la dejamos por seguridad apuntando a la IA.
     return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
         <Response>
-            <Say language="es-MX">Un momento, por favor.</Say>
-            <Dial>
-                <Sip>{LK_SIP_URI}</Sip>
-            </Dial>
+            <Dial><Sip>{LK_SIP_URI}</Sip></Dial>
         </Response>
     """, media_type="application/xml")
 
