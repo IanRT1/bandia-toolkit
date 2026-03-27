@@ -79,8 +79,7 @@ async def health_check():
 @app.post("/twilio-inbound")
 async def twilio_smart_router(request: Request):
     """
-    Punto de entrada principal. 
-    Eliminamos el whisper de la llamada inicial para evitar lag en el timbrado.
+    Punto de entrada principal para llamadas de Twilio.
     """
     now = datetime.now(tz=PST_ZONE)
     is_biz_hours = BIZ_START <= now.hour < BIZ_END
@@ -89,11 +88,10 @@ async def twilio_smart_router(request: Request):
     client_number = form_data.get("From", "Unknown")
     call_sid = form_data.get("CallSid", "Unknown")
 
-    logger.info(f"--- ENTRADA --- SID: {call_sid} | De: {client_number} | Horario: {is_biz_hours}") [cite: 2]
+    logger.info(f"--- ENTRADA --- SID: {call_sid} | De: {client_number} | Horario: {is_biz_hours}")
 
     if is_biz_hours:
-        # Si el Dial falla (decline/timeout), Twilio IRÁ a la URL de 'action'
-        # Quitamos answerOnBridge para que el fallback sea más sensible al colgado del dueño
+        # El Dial manda al humano, si falla va al action (fallback)
         return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
             <Response>
                 <Dial timeout="15" callerId="{client_number}" action="/twilio-fallback" method="POST">
@@ -102,7 +100,7 @@ async def twilio_smart_router(request: Request):
             </Response>
         """, media_type="application/xml")
     else:
-        logger.info(f"Fuera de horario. Mandando directo a SIP. SID: {call_sid}")
+        logger.info(f"Fuera de horario. Mandando a SIP. SID: {call_sid}")
         return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
             <Response>
                 <Dial><Sip>{LK_SIP_URI}</Sip></Dial>
@@ -112,19 +110,17 @@ async def twilio_smart_router(request: Request):
 @app.post("/twilio-fallback")
 async def twilio_fallback(request: Request):
     """
-    Esta ruta rescata la llamada si el humano no atiende o rechaza.
+    Rescata la llamada si el humano rechaza o no atiende.
     """
     form_data = await request.form()
     status = form_data.get("DialCallStatus")
     bridged = form_data.get("DialBridged") 
     sid = form_data.get("CallSid", "Unknown")
     
-    logger.info(f"--- FALLBACK --- SID: {sid} | Status: {status} | Bridged: {bridged}") [cite: 5]
+    logger.info(f"--- FALLBACK --- SID: {sid} | Status: {status} | Bridged: {bridged}")
     
-    # Si 'bridged' es false, significa que el cliente NUNCA habló con el humano
-    # Por lo tanto, Mia debe entrar sin importar si el status dice 'completed'
     if bridged == "false" or status in ["busy", "no-answer", "canceled", "failed"]:
-        logger.info(f"Rescatando llamada para IA Mia. Motivo: Bridged={bridged}, Status={status}") [cite: 5]
+        logger.info(f"Redirigiendo a IA por Bridged={bridged} o Status={status}")
         return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
             <Response>
                 <Dial>
@@ -135,11 +131,9 @@ async def twilio_fallback(request: Request):
     
     return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
 
-# Mantenemos estas rutas por si decides volver a usarlas, pero no afectan el flujo actual
+# Rutas auxiliares
 @app.post("/twilio-whisper")
 async def twilio_whisper(request: Request):
-    form_data = await request.form()
-    logger.info(f"Whisper disparado. SID: {form_data.get('CallSid')}") [cite: 3, 4]
     return Response(content="""<?xml version="1.0" encoding="UTF-8"?>
         <Response>
             <Gather numDigits="1" timeout="10" action="/twilio-connect-confirm">
@@ -158,7 +152,6 @@ async def twilio_connect_confirm(request: Request):
             <Response><Say language="es-MX">Conectando.</Say></Response>
         """, media_type="application/xml")
     return Response(content="""<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>""", media_type="application/xml")
-
 
 # ----------------------------
 # RECORDING PROXY
@@ -192,7 +185,6 @@ async def get_recording(call_sid: str):
         headers={"Content-Disposition": f"attachment; filename={call_sid}.mp3"}
     )
 
-
 # ============================================================
 # CAMPAIGN: SALON IBARGO
 # ============================================================
@@ -209,7 +201,6 @@ async def salon_ibargo_agendar_cita_route(request: Request):
 async def salon_ibargo_cotizar_evento_route(request: Request):
     return await cotizar_evento_endpoint(request)
 
-
 # ============================================================
 # GLOBAL ERROR HANDLER
 # ============================================================
@@ -222,14 +213,8 @@ async def global_error_handler(request: Request, e: Exception):
         content={"error": "internal_server_error"},
     )
 
-
-# ============================================================
-# Local Dev Entrypoint
-# ============================================================
-
 if __name__ == "__main__":
     import uvicorn
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", 5000))
-    logger.info("Starting automation service on http://%s:%s", host, port)
     uvicorn.run("main:app", host=host, port=port, reload=False)
