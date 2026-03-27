@@ -79,8 +79,8 @@ async def health_check():
 @app.post("/twilio-inbound")
 async def twilio_smart_router(request: Request):
     """
-    This is the new entry point for Twilio calls. 
-    It replaces the old direct connection to LiveKit.
+    Entry point for Twilio calls. 
+    Decides between routing to human (with whisper) or AI.
     """
     now = datetime.now(tz=PST_ZONE)
     is_biz_hours = BIZ_START <= now.hour < BIZ_END
@@ -91,10 +91,10 @@ async def twilio_smart_router(request: Request):
     logger.info(f"Inbound call from {client_number}. Biz hours: {is_biz_hours}")
 
     if is_biz_hours:
-        # Try owner first. If busy/decline/voicemail -> go to /twilio-fallback
+        # answerOnBridge="true" ensures fallback works if the owner declines or ignore.
         return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
             <Response>
-                <Dial timeout="20" callerId="{client_number}" action="/twilio-fallback">
+                <Dial timeout="20" callerId="{client_number}" action="/twilio-fallback" answerOnBridge="true">
                     <Number url="/twilio-whisper">{SALON_GUY_PHONE}</Number>
                 </Dial>
             </Response>
@@ -109,20 +109,45 @@ async def twilio_smart_router(request: Request):
 
 @app.post("/twilio-whisper")
 async def twilio_whisper():
-    """Plays only to the owner to verify a human is answering, not a machine."""
+    """Plays only to the owner. Requires '1' to confirm answer."""
     return Response(content="""<?xml version="1.0" encoding="UTF-8"?>
         <Response>
-            <Gather numDigits="1" timeout="10">
+            <Gather numDigits="1" timeout="10" action="/twilio-connect-confirm">
                 <Say language="es-MX">Llamada de cliente de Salon Ibargo. Presiona uno para contestar.</Say>
             </Gather>
             <Hangup/>
         </Response>
     """, media_type="application/xml")
 
+@app.post("/twilio-connect-confirm")
+async def twilio_connect_confirm(request: Request):
+    """Bridge the call once the owner presses 1."""
+    form_data = await request.form()
+    digit = form_data.get("Digits")
+    
+    if digit == "1":
+        logger.info("Owner pressed 1. Connecting call.")
+        return Response(content="""<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Say language="es-MX">Conectando.</Say>
+            </Response>
+        """, media_type="application/xml")
+    else:
+        logger.info(f"Owner pressed {digit} instead of 1. Hanging up leg.")
+        return Response(content="""<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Hangup/>
+            </Response>
+        """, media_type="application/xml")
+
 @app.post("/twilio-fallback")
-async def twilio_fallback():
-    """If the owner doesn't answer or presses nothing, connect to LiveKit AI."""
-    logger.info("Owner did not pick up or declined. Routing to LiveKit AI.")
+async def twilio_fallback(request: Request):
+    """If the owner doesn't answer, declines, or presses nothing, connect to LiveKit AI."""
+    form_data = await request.form()
+    status = form_data.get("DialCallStatus")
+    
+    logger.info(f"Human routing failed. Status: {status}. Connecting to LiveKit AI.")
+    
     return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
         <Response>
             <Dial><Sip>{LK_SIP_URI}</Sip></Dial>
@@ -139,7 +164,6 @@ async def get_recording(call_sid: str):
     account_sid = os.getenv("TWILIO_ACCOUNT_SID")
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
 
-    # Look up the Recording SID from the call_sid
     lookup_url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Calls/{call_sid}/Recordings.json"
 
     async with httpx.AsyncClient() as client:
@@ -175,9 +199,6 @@ async def get_recording(call_sid: str):
 
 @app.post("/salon_ibargo_after_call")
 async def salon_ibargo_after_call_route(request: Request):
-    """
-    Salon Ibargo – After Call automation
-    """
     return await handle_salon_after_call(request)
 
 
