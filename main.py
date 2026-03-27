@@ -119,7 +119,6 @@ async def index():
     return {"status": "ok", "service": "automation_service"}
 
 
-
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
