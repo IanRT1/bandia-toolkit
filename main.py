@@ -83,19 +83,22 @@ async def twilio_smart_router(request: Request):
     
     form_data = await request.form()
     client_number = form_data.get("From", "Unknown")
+    call_sid = form_data.get("CallSid", "Unknown")
 
-    logger.info(f"Inbound call from {client_number}. Biz hours: {is_biz_hours}")
+    # LOG DE ENTRADA
+    logger.info(f"--- NUEVA LLAMADA --- SID: {call_sid} | Desde: {client_number} | Horario: {is_biz_hours}")
 
     if is_biz_hours:
-        # Si el Dial falla (decline/timeout), Twilio IRÁ a la URL de 'action'
+        # ELIMINAMOS answerOnBridge y usamos un flujo secuencial más agresivo
         return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
             <Response>
-                <Dial timeout="15" callerId="{client_number}" action="/twilio-fallback" answerOnBridge="true">
+                <Dial timeout="15" callerId="{client_number}" action="/twilio-fallback" method="POST">
                     <Number url="/twilio-whisper">{SALON_GUY_PHONE}</Number>
                 </Dial>
             </Response>
         """, media_type="application/xml")
     else:
+        logger.info(f"Fuera de horario. Mandando directo a SIP. SID: {call_sid}")
         return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
             <Response>
                 <Dial><Sip>{LK_SIP_URI}</Sip></Dial>
@@ -103,7 +106,9 @@ async def twilio_smart_router(request: Request):
         """, media_type="application/xml")
 
 @app.post("/twilio-whisper")
-async def twilio_whisper():
+async def twilio_whisper(request: Request):
+    form_data = await request.form()
+    logger.info(f"Whisper disparado para el dueño. SID: {form_data.get('CallSid')}")
     return Response(content="""<?xml version="1.0" encoding="UTF-8"?>
         <Response>
             <Gather numDigits="1" timeout="10" action="/twilio-connect-confirm">
@@ -117,29 +122,42 @@ async def twilio_whisper():
 async def twilio_connect_confirm(request: Request):
     form_data = await request.form()
     digit = form_data.get("Digits")
+    sid = form_data.get("CallSid")
+    
     if digit == "1":
-        logger.info("Owner pressed 1. Connecting call.")
+        logger.info(f"DUEÑO PRESIONÓ 1. Conectando... SID: {sid}")
         return Response(content="""<?xml version="1.0" encoding="UTF-8"?>
-            <Response><Say language="es-MX">Conectando.</Say></Response>
+            <Response><Say language="es-MX">Conectando ahora.</Say></Response>
         """, media_type="application/xml")
     
-    logger.info(f"Owner pressed {digit} or timeout. Hanging up leg.")
+    logger.info(f"DUEÑO NO PRESIONÓ 1 (Marcó: {digit}). SID: {sid}")
     return Response(content="""<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>""", media_type="application/xml")
 
 @app.post("/twilio-fallback")
 async def twilio_fallback(request: Request):
-    # Si llega aquí, es porque el humano no contestó o colgó (DialCallStatus != 'completed')
     form_data = await request.form()
-    status = form_data.get("DialCallStatus")
-    logger.info(f"Ejecutando fallback directo a IA. Status: {status}")
     
-    return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
-        <Response>
-            <Dial>
-                <Sip>{LK_SIP_URI}</Sip>
-            </Dial>
-        </Response>
-    """, media_type="application/xml")
+    # LOGS DETALLADOS PARA DEBUGEAR
+    status = form_data.get("DialCallStatus")
+    reason = form_data.get("DialCallStatus", "N/A")
+    sid = form_data.get("CallSid", "Unknown")
+    
+    logger.info(f"--- FALLBACK ACTIVADO --- SID: {sid} | Status Recibido: {status} | Todo el Form: {dict(form_data)}")
+    
+    # Si el estado no es 'completed' (que significa que el humano NO habló con el cliente)
+    # o si simplemente queremos que la IA rescate CUALQUIER cosa que llegue aquí:
+    if status in ["completed", "busy", "no-answer", "canceled", "failed"]:
+        logger.info(f"Redirigiendo a IA Mia por estado: {status}")
+        return Response(content=f"""<?xml version="1.0" encoding="UTF-8"?>
+            <Response>
+                <Say language="es-MX">Por favor espere un momento.</Say>
+                <Dial>
+                    <Sip>{LK_SIP_URI}</Sip>
+                </Dial>
+            </Response>
+        """, media_type="application/xml")
+    
+    return Response(content="<Response><Hangup/></Response>", media_type="application/xml")
 
 
 # ----------------------------
