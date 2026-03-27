@@ -27,11 +27,13 @@ from fastapi.responses import JSONResponse, StreamingResponse
 # =========================
 # Campaign: Salon Ibargo
 # =========================
+from salon_ibargo.salon_ibargo_call_routing import salon_ibargo_inbound_call
 from salon_ibargo.salon_ibargo_after_call_handler import handle_salon_after_call
 from salon_ibargo.salon_ibargo_actions import (
     agendar_cita_disponibilidad_endpoint,
     cotizar_evento_endpoint,
 )
+
 
 # =========================
 # Bootstrap
@@ -57,9 +59,11 @@ app = FastAPI()
 async def index():
     return {"status": "ok", "service": "automation_service"}
 
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
 
 # ----------------------------
 # RECORDING PROXY
@@ -70,7 +74,6 @@ async def get_recording(call_sid: str):
     account_sid = os.getenv("TWILIO_ACCOUNT_SID")
     auth_token = os.getenv("TWILIO_AUTH_TOKEN")
 
-    # Look up the Recording SID from the call_sid
     lookup_url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Calls/{call_sid}/Recordings.json"
 
     async with httpx.AsyncClient() as client:
@@ -101,29 +104,31 @@ async def get_recording(call_sid: str):
 # ============================================================
 
 # ----------------------------
+# INBOUND CALL
+# ----------------------------
+
+@app.post("/salon_ibargo/inbound_call")
+async def salon_ibargo_inbound_call_route(request: Request):
+    return await salon_ibargo_inbound_call(request)
+
+
+# ----------------------------
 # AFTER CALL
 # ----------------------------
 
 @app.post("/salon_ibargo_after_call")
 async def salon_ibargo_after_call_route(request: Request):
-    """
-    Salon Ibargo – After Call automation
-    """
     return await handle_salon_after_call(request)
 
 
 # ----------------------------
-# ACTION: agendar_cita_disponibilidad
+# ACTIONS
 # ----------------------------
 
 @app.post("/salon_ibargo_agendar_cita_disponibilidad")
 async def salon_ibargo_agendar_cita_route(request: Request):
     return await agendar_cita_disponibilidad_endpoint(request)
 
-
-# ----------------------------
-# ACTION: cotizar_evento
-# ----------------------------
 
 @app.post("/salon_ibargo_cotizar_evento")
 async def salon_ibargo_cotizar_evento_route(request: Request):
