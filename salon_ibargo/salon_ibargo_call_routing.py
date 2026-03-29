@@ -25,14 +25,14 @@ from twilio.twiml.voice_response import VoiceResponse
 logger = logging.getLogger(__name__)
 
 # =========================
-# CONFIG 
+# CONFIG
 # =========================
 
 BUSINESS_TZ = ZoneInfo("America/Tijuana")
 
 AGENT_SIP_URI = os.getenv("SALON_IBARGO_SIP_URI")
 
-FORWARD_NUMBER = os.getenv("SALON_IBARGO_FORWARD_NUMBER") 
+FORWARD_NUMBER = os.getenv("SALON_IBARGO_FORWARD_NUMBER")
 
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
@@ -44,6 +44,8 @@ SCREEN_TIMEOUT_SECONDS = 10
 
 BUSINESS_HOURS_START = 9
 BUSINESS_HOURS_END = 17
+
+TEST_BYPASS_NUMBER = "+526862887006"
 
 
 # =========================
@@ -92,13 +94,20 @@ async def salon_ibargo_inbound_call(request: Request):
 
     vr = VoiceResponse()
 
-    # Outside business hours → AI
+    # Hardcoded test number -> direct to AI
+    if from_number == TEST_BYPASS_NUMBER:
+        logger.info("Test bypass number detected -> direct to AI")
+        dial = vr.dial(answer_on_bridge=True)
+        dial.sip(AGENT_SIP_URI)
+        return Response(str(vr), media_type="application/xml")
+
+    # Outside business hours -> AI
     if not is_business_hours():
         dial = vr.dial(answer_on_bridge=True)
         dial.sip(AGENT_SIP_URI)
         return Response(str(vr), media_type="application/xml")
 
-    # Inside business hours → human first
+    # Inside business hours -> human first
     dial_action_url = f"{base_url}/salon_ibargo/call/dial_action"
 
     screen_url = f"{base_url}/salon_ibargo/call/screen?" + urlencode({
