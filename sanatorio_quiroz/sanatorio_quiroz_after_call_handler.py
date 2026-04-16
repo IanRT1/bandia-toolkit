@@ -189,4 +189,4 @@ async def handle_sanatorio_quiroz_after_call(request: Request):
         channel,
     )
 
-    return {"status": "processed"}
+    return {"status": "processed"} 
