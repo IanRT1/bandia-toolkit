@@ -103,7 +103,7 @@ async def handle_sanatorio_quiroz_after_call(request: Request):
 
     summary = None
     if transcript:
-        summary = await summarize_transcript(transcript, channel)
+        summary = await summarize_transcript(transcript)
     else:
         if channel == "voice":
             summary = "Llamada Fantasma 👻"
