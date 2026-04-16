@@ -1,39 +1,43 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 from pathlib import Path
 import logging
 import os
 import json
-import tempfile
 
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
 logger = logging.getLogger("gsheet_utils")
 
-# ------------------------
-# Config
-# ------------------------
+# =====================================================
+# CONFIG
+# =====================================================
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-SPREADSHEET_ID = "1fvo3qrZgvLiHUrjXgm3yxuwH3C5qgzaL43O8JJJp6OI"
+
+# Campaign -> Spreadsheet ID
+SPREADSHEET_IDS = {
+    "salon_ibargo": "1fvo3qrZgvLiHUrjXgm3yxuwH3C5qgzaL43O8JJJp6OI",
+    "sanatorio_quiroz": "1a-85whiTyE5NHmH70_CJKeKD0aoGzjeXqCAAyyAgprc",
+}
 
 BASE_DIR = Path(__file__).resolve().parent
 LOCAL_SERVICE_ACCOUNT_FILE = BASE_DIR / "service_account.json"
 
-# ------------------------
-# Credential Loader
-# ------------------------
+# =====================================================
+# CREDENTIAL LOADER
+# =====================================================
 
 def _load_credentials():
     """
     Loads credentials from:
-    1) GOOGLE_SERVICE_ACCOUNT_JSON env var (Render production)
+    1) GOOGLE_SERVICE_ACCOUNT_JSON env var (production)
     2) local service_account.json file (local dev fallback)
     """
 
     json_env = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
 
-    # 🔹 Production: load from env variable
+    # Production: load from env variable
     if json_env:
         try:
             service_account_info = json.loads(json_env)
@@ -46,7 +50,7 @@ def _load_credentials():
                 "Invalid GOOGLE_SERVICE_ACCOUNT_JSON environment variable"
             ) from e
 
-    # 🔹 Local fallback: load from file
+    # Local fallback: load from file
     if LOCAL_SERVICE_ACCOUNT_FILE.exists():
         return Credentials.from_service_account_file(
             LOCAL_SERVICE_ACCOUNT_FILE,
@@ -58,10 +62,9 @@ def _load_credentials():
         "Set GOOGLE_SERVICE_ACCOUNT_JSON or provide service_account.json locally."
     )
 
-
-# ------------------------
-# Client (lazy)
-# ------------------------
+# =====================================================
+# CLIENT (LAZY)
+# =====================================================
 
 _service = None
 
@@ -72,22 +75,47 @@ def _get_sheets_service():
         _service = build("sheets", "v4", credentials=creds)
     return _service
 
+# =====================================================
+# HELPERS
+# =====================================================
 
-# ------------------------
-# Public API
-# ------------------------
+def get_spreadsheet_id_for_campaign(campaign: str) -> str:
+    spreadsheet_id = SPREADSHEET_IDS.get(campaign)
+
+    if not spreadsheet_id:
+        raise ValueError(
+            f"Unknown campaign '{campaign}'. "
+            f"Valid campaigns: {', '.join(SPREADSHEET_IDS.keys())}"
+        )
+
+    return spreadsheet_id
+
+# =====================================================
+# PUBLIC API
+# =====================================================
 
 def append_row_to_sheet(
     *,
+    campaign: str,
     sheet_name: str,
     headers: List[str],
     row: Dict,
 ):
+    """
+    Appends one row into the target sheet for the given campaign.
+
+    Args:
+        campaign: e.g. "salon_ibargo" or "sanatorio_quiroz"
+        sheet_name: target tab name inside the spreadsheet
+        headers: ordered list of column names to serialize
+        row: dict keyed by header names
+    """
     service = _get_sheets_service()
+    spreadsheet_id = get_spreadsheet_id_for_campaign(campaign)
 
     try:
         result = service.spreadsheets().values().get(
-            spreadsheetId=SPREADSHEET_ID,
+            spreadsheetId=spreadsheet_id,
             range=f"{sheet_name}!A:A",
         ).execute()
 
@@ -97,24 +125,35 @@ def append_row_to_sheet(
         values = [[row.get(h) for h in headers]]
 
         service.spreadsheets().values().update(
-            spreadsheetId=SPREADSHEET_ID,
+            spreadsheetId=spreadsheet_id,
             range=f"{sheet_name}!A{next_row}",
             valueInputOption="USER_ENTERED",
             body={"values": values},
         ).execute()
 
-        logger.info("sheet_row_appended sheet=%s row=%s", sheet_name, next_row)
+        logger.info(
+            "sheet_row_appended campaign=%s spreadsheet_id=%s sheet=%s row=%s",
+            campaign,
+            spreadsheet_id,
+            sheet_name,
+            next_row,
+        )
 
     except Exception as e:
-        logger.exception("Failed to append row to sheet=%s error=%s", sheet_name, e)
+        logger.exception(
+            "Failed to append row campaign=%s spreadsheet_id=%s sheet=%s error=%s",
+            campaign,
+            spreadsheet_id,
+            sheet_name,
+            e,
+        )
         raise
 
-# ------------------------
-# Manual Test
-# ------------------------
+# =====================================================
+# MANUAL TEST
+# =====================================================
 
 if __name__ == "__main__":
-
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -125,28 +164,66 @@ if __name__ == "__main__":
 
     PST = ZoneInfo("America/Los_Angeles")
 
-    HEADERS = [
-        "created_at_pst",
-        "name",
-        "purpose",
-        "visit_date",
-        "visit_time",
-        "call_id",
+    CHAT_HEADERS = [
+        "Creado",
+        "Empiezo Chat",
+        "Termino Chat",
+        "Duración",
+        "Transcripción",
+        "Resumen",
+        "ID",
     ]
 
-    test_row = {
-        "created_at_pst": datetime.now(tz=PST).isoformat(),
-        "name": "Prueba Google Sheets",
-        "purpose": "Test append desde gsheet_utils",
-        "visit_date": "2026-01-20",
-        "visit_time": "15:30",
-        "call_id": "TEST-CALL-123",
+    CALL_HEADERS = [
+        "Creado",
+        "From Phone Number",
+        "To Phone Number",
+        "Empiezo Llamada",
+        "Termino Llamada",
+        "Duración",
+        "Transcripción",
+        "Resumen",
+        "Grabación",
+        "ID",
+    ]
+
+    chat_row = {
+        "Creado": datetime.now(tz=PST).strftime("%Y-%m-%d %H:%M:%S"),
+        "Empiezo Chat": datetime.now(tz=PST).strftime("%Y-%m-%d %H:%M:%S"),
+        "Termino Chat": datetime.now(tz=PST).strftime("%Y-%m-%d %H:%M:%S"),
+        "Duración": 12,
+        "Transcripción": "Usuario: Hola | Agente: Buenas tardes",
+        "Resumen": "Prueba de chat",
+        "ID": "TEST-CHAT-123",
     }
 
-    logger.info("Appending test row to Google Sheet...")
+    call_row = {
+        "Creado": datetime.now(tz=PST).strftime("%Y-%m-%d %H:%M:%S"),
+        "From Phone Number": "+15555550111",
+        "To Phone Number": "+15555550222",
+        "Empiezo Llamada": datetime.now(tz=PST).strftime("%Y-%m-%d %H:%M:%S"),
+        "Termino Llamada": datetime.now(tz=PST).strftime("%Y-%m-%d %H:%M:%S"),
+        "Duración": 34,
+        "Transcripción": "Usuario: Hola | Agente: ¿En qué le ayudo?",
+        "Resumen": "Prueba de llamada",
+        "Grabación": "https://example.com/recording/test-call",
+        "ID": "TEST-CALL-123",
+    }
+
+    logger.info("Appending test chat row to Salon Ibargo...")
     append_row_to_sheet(
-        sheet_name="Citas",
-        headers=HEADERS,
-        row=test_row,
+        campaign="salon_ibargo",
+        sheet_name="Chats",
+        headers=CHAT_HEADERS,
+        row=chat_row,
     )
+
+    logger.info("Appending test call row to Sanatorio Quiroz...")
+    append_row_to_sheet(
+        campaign="sanatorio_quiroz",
+        sheet_name="Llamadas",
+        headers=CALL_HEADERS,
+        row=call_row,
+    )
+
     logger.info("Done.")

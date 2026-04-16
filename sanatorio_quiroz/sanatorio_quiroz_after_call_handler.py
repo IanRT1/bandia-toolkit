@@ -5,25 +5,24 @@ from zoneinfo import ZoneInfo
 
 from fastapi import Request
 
-from salon_ibargo.salon_ibargo_ai_utils import (
+from sanatorio_quiroz.sanatorio_quiroz_ai_utils import (
     summarize_transcript,
     transcript_to_single_line,
 )
 from shared.gsheet_utils import append_row_to_sheet
 
-
 # =====================================================
 # LOGGER
 # =====================================================
 
-logger = logging.getLogger("salon_ibargo_after_conversation")
-
+logger = logging.getLogger("sanatorio_quiroz_after_conversation")
 
 # =====================================================
 # CONFIG
 # =====================================================
 
 PST = ZoneInfo("America/Los_Angeles")
+CAMPAIGN = "sanatorio_quiroz"
 
 # =====================================================
 # SHEET HEADERS (MATCH GOOGLE SHEETS EXACTLY)
@@ -52,27 +51,14 @@ CALL_HEADERS = [
     "ID",
 ]
 
-VISIT_HEADERS = [
-    "Creado",
-    "Nombre",
-    "From Phone Number",
-    "To Phone Number",
-    "Motivo",
-    "Fecha",
-    "Hora",
-    "ID Conversación",
-]
-
-
 # =====================================================
 # AFTER CONVERSATION HANDLER
 # =====================================================
 
-async def handle_salon_after_call(request: Request):
-
+async def handle_sanatorio_quiroz_after_call(request: Request):
     payload = await request.json()
 
-    logger.info("[handle_salon_after_call] RAW PAYLOAD: %s", payload)
+    logger.info("[handle_sanatorio_quiroz_after_call] RAW PAYLOAD: %s", payload)
 
     # -------------------------------------------------
     # REQUIRED FIELDS
@@ -84,7 +70,6 @@ async def handle_salon_after_call(request: Request):
     ended_str = payload["conversation_ended_at"]
 
     transcript = payload.get("transcript", [])
-    confirmed_visit = payload.get("confirmed_visit")
 
     # Voice-only metadata (safe for chat)
     from_phone_number = payload.get("from_phone_number")
@@ -92,7 +77,7 @@ async def handle_salon_after_call(request: Request):
     call_sid = payload.get("call_sid")
 
     if not to_phone_number:
-        to_phone_number = os.environ.get("SALON_IBARGO_PHONE_NUMBER")
+        to_phone_number = os.environ.get("SANATORIO_QUIROZ_PHONE_NUMBER")
 
     # -------------------------------------------------
     # PARSE TIMESTAMPS
@@ -122,7 +107,7 @@ async def handle_salon_after_call(request: Request):
     else:
         if channel == "voice":
             summary = "Llamada Fantasma 👻"
-        if channel == "chat":
+        elif channel == "chat":
             summary = "Chat Fantasma 👻"
 
     single_line_transcript = transcript_to_single_line(transcript)
@@ -136,8 +121,11 @@ async def handle_salon_after_call(request: Request):
     # =====================================================
 
     if channel == "voice":
-
-        recording_url = f"https://bandia-toolkit-qwt3.onrender.com/recording?call_sid={call_sid}" if call_sid else None
+        recording_url = (
+            f"https://bandia-toolkit-qwt3.onrender.com/recording?call_sid={call_sid}"
+            if call_sid
+            else None
+        )
 
         sheet_name = "Llamadas"
         headers = CALL_HEADERS
@@ -156,7 +144,6 @@ async def handle_salon_after_call(request: Request):
         }
 
     elif channel == "chat":
-
         sheet_name = "Chats"
         headers = CHAT_HEADERS
 
@@ -171,7 +158,6 @@ async def handle_salon_after_call(request: Request):
         }
 
     else:
-
         logger.warning(
             "Unknown channel '%s', defaulting to Chats sheet",
             channel,
@@ -191,38 +177,14 @@ async def handle_salon_after_call(request: Request):
         }
 
     append_row_to_sheet(
-        campaign="salon_ibargo",
+        campaign=CAMPAIGN,
         sheet_name=sheet_name,
         headers=headers,
         row=row,
     )
 
-    # =====================================================
-    # HANDLE CONFIRMED VISIT (ALWAYS GOES TO CITAS)
-    # =====================================================
-
-    if confirmed_visit:
-
-        visit_row = {
-            "Creado": created_str,
-            "Nombre": confirmed_visit["name"],
-            "From Phone Number": from_phone_number,
-            "To Phone Number": to_phone_number,
-            "Motivo": confirmed_visit["purpose"],
-            "Fecha": confirmed_visit["visit_date"],
-            "Hora": confirmed_visit["visit_time"],
-            "ID Conversación": conversation_id,
-        }
-
-        append_row_to_sheet(
-            campaign="salon_ibargo",
-            sheet_name="Citas",
-            headers=VISIT_HEADERS,
-            row=visit_row,
-        )
-
     logger.info(
-        "Salon Ibargo after-conversation completed conversation_id=%s channel=%s",
+        "Sanatorio Quiroz after-conversation completed conversation_id=%s channel=%s",
         conversation_id,
         channel,
     )

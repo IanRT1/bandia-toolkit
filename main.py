@@ -40,6 +40,13 @@ from salon_ibargo.salon_ibargo_call_routing import (
 )
 
 # =========================
+# Campaign: Sanatorio Quiroz
+# =========================
+from sanatorio_quiroz.sanatorio_quiroz_after_call_handler import (
+    handle_sanatorio_quiroz_after_call,
+)
+
+# =========================
 # Bootstrap
 # =========================
 
@@ -53,7 +60,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-
 
 # =========================
 # General Health
@@ -115,17 +121,21 @@ async def get_recording(call_sid: str):
 async def salon_ibargo_inbound_call_route(request: Request):
     return await salon_ibargo_inbound_call(request)
 
+
 @app.post("/salon_ibargo/call/screen")
 async def salon_ibargo_screen_route(request: Request):
     return await screen_call(request)
+
 
 @app.post("/salon_ibargo/call/screen_result")
 async def salon_ibargo_screen_result_route(request: Request):
     return await screen_result(request)
 
+
 @app.post("/salon_ibargo/call/dial_action")
 async def salon_ibargo_dial_action_route(request: Request):
     return await dial_action(request)
+
 
 # ----------------------------
 # AFTER CALL
@@ -148,6 +158,19 @@ async def salon_ibargo_agendar_cita_route(request: Request):
 @app.post("/salon_ibargo_cotizar_evento")
 async def salon_ibargo_cotizar_evento_route(request: Request):
     return await cotizar_evento_endpoint(request)
+
+
+# ============================================================
+# CAMPAIGN: SANATORIO QUIROZ
+# ============================================================
+
+# ----------------------------
+# AFTER CALL
+# ----------------------------
+
+@app.post("/sanatorio_quiroz_after_call")
+async def sanatorio_quiroz_after_call_route(request: Request):
+    return await handle_sanatorio_quiroz_after_call(request)
 
 
 # ============================================================
