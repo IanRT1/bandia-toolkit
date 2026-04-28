@@ -47,6 +47,24 @@ from sanatorio_quiroz.sanatorio_quiroz_after_call_handler import (
 )
 
 # =========================
+# Campaign: VG Consultoria
+# =========================
+from vg_consultoria.vg_consultoria_after_call_handler import (
+    handle_vg_consultoria_after_call,
+)
+from vg_consultoria.vg_consultoria_actions import (
+    agendar_cita_disponibilidad_endpoint as vg_agendar_cita_endpoint,
+)
+
+# =========================
+# Shared: Google OAuth
+# =========================
+from shared.google_oauth import (
+    start_oauth_flow,
+    handle_oauth_callback,
+)
+
+# =========================
 # Bootstrap
 # =========================
 
@@ -171,6 +189,51 @@ async def salon_ibargo_cotizar_evento_route(request: Request):
 @app.post("/sanatorio_quiroz_after_call")
 async def sanatorio_quiroz_after_call_route(request: Request):
     return await handle_sanatorio_quiroz_after_call(request)
+
+
+# ============================================================
+# CAMPAIGN: VG CONSULTORIA
+# ============================================================
+
+# ----------------------------
+# AFTER CALL
+# ----------------------------
+
+@app.post("/vg_consultoria_after_call")
+async def vg_consultoria_after_call_route(request: Request):
+    return await handle_vg_consultoria_after_call(request)
+
+
+# ----------------------------
+# ACTIONS
+# ----------------------------
+
+@app.post("/vg_consultoria_agendar_cita_disponibilidad")
+async def vg_consultoria_agendar_cita_route(request: Request):
+    return await vg_agendar_cita_endpoint(request)
+
+
+# ============================================================
+# GOOGLE OAUTH (one-time per client setup)
+# ============================================================
+
+@app.get("/oauth/google/connect")
+async def oauth_google_connect(campaign: str):
+    """
+    Generates the Google OAuth consent URL for a campaign.
+    Send this URL to the client; they click it once to grant access.
+    Usage: GET /oauth/google/connect?campaign=vg_consultoria
+    """
+    return await start_oauth_flow(campaign)
+
+
+@app.get("/oauth/google/callback")
+async def oauth_google_callback(request: Request):
+    """
+    Google redirects here after user grants consent.
+    Exchanges the auth code for a refresh token and logs it.
+    """
+    return await handle_oauth_callback(request)
 
 
 # ============================================================

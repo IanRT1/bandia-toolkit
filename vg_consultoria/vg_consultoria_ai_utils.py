@@ -1,4 +1,4 @@
-# ai_utils.py
+# vg_consultoria_ai_utils.py
 
 from typing import List
 import os
@@ -40,7 +40,7 @@ STD_MODEL = "gpt-5.4-mini"
 # -------------------------------------------------
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("ai_utils")
+logger = logging.getLogger("vg_consultoria_ai_utils")
 
 # -------------------------------------------------
 # Models
@@ -67,17 +67,10 @@ def transcript_to_single_line(transcript: list[dict]) -> str:
 # Public API
 # -------------------------------------------------
 
-async def summarize_transcript(transcript: List[TranscriptItem], channel: str = "voice") -> str:
+async def summarize_transcript(transcript: List[TranscriptItem]) -> str:
 
-    if channel == "voice":
-        medium = "llamada telefónica"
-        ghost_label = "Llamada Fantasma 👻"
-    elif channel == "chat":
-        medium = "conversación de chat"
-        ghost_label = "Chat Fantasma 👻"
-    else:
-        medium = "conversación"
-        ghost_label = "Fantasma 👻"
+    medium = "llamada telefónica"
+    ghost_label = "Llamada Fantasma 👻"
 
     transcript_dicts = [
         item if isinstance(item, dict) else vars(item)
@@ -90,7 +83,7 @@ async def summarize_transcript(transcript: List[TranscriptItem], channel: str = 
     ).strip()
 
     if not user_content or len(user_content) < 10:
-        logger.info("summarize_transcript: ghost detected (no user input) channel=%s", channel)
+        logger.info("summarize_transcript: ghost detected (no user input)")
         return ghost_label
 
     transcript_text = transcript_to_single_line(transcript)
@@ -104,7 +97,7 @@ async def summarize_transcript(transcript: List[TranscriptItem], channel: str = 
         f"{transcript_text}"
     )
 
-    logger.info("summarize_transcript: calling %s channel=%s", SUM_MODEL, channel)
+    logger.info("summarize_transcript: calling %s", SUM_MODEL)
 
     try:
         response = await client.responses.create(
@@ -116,15 +109,15 @@ async def summarize_transcript(transcript: List[TranscriptItem], channel: str = 
         result = response.output_text.strip()
 
     except TimeoutError:
-        logger.warning("summarize_transcript: request timed out channel=%s", channel)
+        logger.warning("summarize_transcript: request timed out")
         return "Resumen no disponible (tiempo de espera agotado)."
 
     except Exception:
-        logger.exception("summarize_transcript: unexpected error channel=%s", channel)
+        logger.exception("summarize_transcript: unexpected error")
         return "Resumen no disponible (error interno)."
 
     if not result:
-        logger.warning("summarize_transcript: model returned empty response channel=%s", channel)
+        logger.warning("summarize_transcript: model returned empty response")
         return "Resumen no disponible (respuesta vacía del modelo)."
 
     return result
