@@ -42,8 +42,8 @@ twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 RING_TIMEOUT_SECONDS = 7
 SCREEN_TIMEOUT_SECONDS = 10
 
-BUSINESS_HOURS_START = 9
-BUSINESS_HOURS_END = 17
+#BUSINESS_HOURS_START = 9
+#BUSINESS_HOURS_END = 17
 
 TEST_BYPASS_NUMBER = "+526862887006"
 
@@ -64,7 +64,19 @@ def get_base_url(request: Request) -> str:
 
 def is_business_hours() -> bool:
     now = datetime.now(BUSINESS_TZ)
-    return BUSINESS_HOURS_START <= now.hour < BUSINESS_HOURS_END
+    weekday = now.weekday()  # lunes=0, domingo=6
+    hour = now.hour
+
+    # Lunes a viernes: 9 AM a 5 PM
+    if 0 <= weekday <= 4:
+        return 9 <= hour < 17
+
+    # Sábado: 9 AM a 1 PM
+    if weekday == 5:
+        return 9 <= hour < 13
+
+    # Domingo: cerrado
+    return False
 
 
 def build_agent_twiml() -> str:
