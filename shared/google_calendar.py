@@ -153,3 +153,91 @@ async def is_slot_available(
             "end": time_max,
         },
     }
+
+# =====================================================
+# CREATE EVENT
+# =====================================================
+
+async def create_event(
+    campaign: str,
+    visit_date: str,           # "YYYY-MM-DD"
+    visit_time: str,           # "HH:MM"
+    duration_minutes: int = 60,
+    name: str | None = None,
+    purpose: str | None = None,
+    calendar_id: str = DEFAULT_CALENDAR_ID,
+) -> dict:
+    """
+    Creates a calendar event in the campaign's Google Calendar.
+
+    Returns:
+        Google Calendar event JSON
+
+    Raises:
+        RuntimeError if API call fails.
+    """
+
+    try:
+        start_dt = datetime.strptime(
+            f"{visit_date} {visit_time}",
+            "%Y-%m-%d %H:%M",
+        ).replace(tzinfo=PST)
+    except ValueError as e:
+        raise RuntimeError(f"Invalid date/time format: {e}")
+
+    end_dt = start_dt + timedelta(minutes=duration_minutes)
+
+    logger.info(
+        "create_event campaign=%s range=%s -> %s",
+        campaign,
+        start_dt.isoformat(),
+        end_dt.isoformat(),
+    )
+
+    access_token = await get_access_token(campaign)
+
+    summary = f"Cita - {name}" if name else "Cita"
+    description = f"Cliente: {name or 'N/A'}\nMotivo: {purpose or 'N/A'}"
+
+    payload = {
+        "summary": summary,
+        "description": description,
+        "start": {
+            "dateTime": start_dt.isoformat(),
+            "timeZone": "America/Los_Angeles",
+        },
+        "end": {
+            "dateTime": end_dt.isoformat(),
+            "timeZone": "America/Los_Angeles",
+        },
+    }
+
+    url = f"{CALENDAR_API_BASE}/calendars/{calendar_id}/events"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        response = await client.post(url, headers=headers, json=payload)
+
+    if response.status_code not in (200, 201):
+        logger.error(
+            "create_event failed campaign=%s status=%s body=%s",
+            campaign,
+            response.status_code,
+            response.text,
+        )
+        raise RuntimeError(
+            f"Failed to create event: {response.status_code} {response.text}"
+        )
+
+    event = response.json()
+
+    logger.info(
+        "create_event success campaign=%s event_id=%s",
+        campaign,
+        event.get("id"),
+    )
+
+    return event

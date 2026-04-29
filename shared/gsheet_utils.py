@@ -19,6 +19,7 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SPREADSHEET_IDS = {
     "salon_ibargo": "1fvo3qrZgvLiHUrjXgm3yxuwH3C5qgzaL43O8JJJp6OI",
     "sanatorio_quiroz": "1a-85whiTyE5NHmH70_CJKeKD0aoGzjeXqCAAyyAgprc",
+    "vg_consultoria": "1xf9FuXF-pIzQsGaJwO4nuU5GY7_ZQaou3bJPGbS27WQ",
 }
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -28,16 +29,22 @@ LOCAL_SERVICE_ACCOUNT_FILE = BASE_DIR / "service_account.json"
 # CREDENTIAL LOADER
 # =====================================================
 
-def _load_credentials():
+def _load_credentials(campaign: str):
     """
-    Loads credentials from:
-    1) GOOGLE_SERVICE_ACCOUNT_JSON env var (production)
-    2) local service_account.json file (local dev fallback)
+    Loads credentials per campaign.
+
+    Env var format:
+        <CAMPAIGN>_GOOGLE_SERVICE_ACCOUNT_JSON
+
+    Example:
+        VG_CONSULTORIA_GOOGLE_SERVICE_ACCOUNT_JSON
     """
 
-    json_env = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+    prefix = campaign.upper()
+    env_var = f"{prefix}_GOOGLE_SERVICE_ACCOUNT_JSON"
 
-    # Production: load from env variable
+    json_env = os.environ.get(env_var)
+
     if json_env:
         try:
             service_account_info = json.loads(json_env)
@@ -47,33 +54,25 @@ def _load_credentials():
             )
         except Exception as e:
             raise RuntimeError(
-                "Invalid GOOGLE_SERVICE_ACCOUNT_JSON environment variable"
+                f"Invalid {env_var} environment variable"
             ) from e
 
-    # Local fallback: load from file
-    if LOCAL_SERVICE_ACCOUNT_FILE.exists():
-        return Credentials.from_service_account_file(
-            LOCAL_SERVICE_ACCOUNT_FILE,
-            scopes=SCOPES,
-        )
-
     raise RuntimeError(
-        "No Google credentials found. "
-        "Set GOOGLE_SERVICE_ACCOUNT_JSON or provide service_account.json locally."
+        f"No credentials found for campaign '{campaign}'. "
+        f"Expected env var: {env_var}"
     )
 
 # =====================================================
 # CLIENT (LAZY)
 # =====================================================
 
-_service = None
+_services = {}
 
-def _get_sheets_service():
-    global _service
-    if _service is None:
-        creds = _load_credentials()
-        _service = build("sheets", "v4", credentials=creds)
-    return _service
+def _get_sheets_service(campaign: str):
+    if campaign not in _services:
+        creds = _load_credentials(campaign)
+        _services[campaign] = build("sheets", "v4", credentials=creds)
+    return _services[campaign]
 
 # =====================================================
 # HELPERS
@@ -110,7 +109,7 @@ def append_row_to_sheet(
         headers: ordered list of column names to serialize
         row: dict keyed by header names
     """
-    service = _get_sheets_service()
+    service = _get_sheets_service(campaign)
     spreadsheet_id = get_spreadsheet_id_for_campaign(campaign)
 
     try:

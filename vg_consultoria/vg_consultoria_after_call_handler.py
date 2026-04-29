@@ -10,6 +10,7 @@ from vg_consultoria.vg_consultoria_ai_utils import (
     transcript_to_single_line,
 )
 from shared.gsheet_utils import append_row_to_sheet
+from shared.google_calendar import create_event
 
 # =====================================================
 # LOGGER
@@ -114,6 +115,23 @@ async def handle_vg_consultoria_after_call(request: Request):
         if call_sid
         else None
     )
+
+    # -------------------------------------------------
+    # CREATE GOOGLE CALENDAR EVENT (ONLY IF CONFIRMED)
+    # -------------------------------------------------
+
+    if confirmed_visit:
+        try:
+            await create_event(
+                campaign=CAMPAIGN,
+                visit_date=confirmed_visit["visit_date"],
+                visit_time=confirmed_visit["visit_time"],
+                duration_minutes=60,
+                name=confirmed_visit["name"],
+                purpose=confirmed_visit.get("purpose"),
+            )
+        except Exception:
+            logger.exception("Calendar event creation failed")
 
     # -------------------------------------------------
     # APPEND TO SHEET
